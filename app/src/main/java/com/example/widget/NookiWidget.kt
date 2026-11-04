@@ -68,7 +68,7 @@ private fun WidgetBody(digest: TodayDigest, nowMillis: Long) {
             .background(ColorProvider(WidgetBackground))
             .cornerRadius(24.dp)
             .padding(14.dp)
-            .clickable(actionStartActivity<MainActivity>())
+            .clickable(actionStartActivity(Intent(context, MainActivity::class.java)))
     ) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

@@ -6,7 +6,7 @@ import com.example.attention.CalendarEvent
 import com.example.attention.CalendarReader
 import com.example.attention.TimeWords
 import com.example.attention.TodayDigest
-import com.example.data.local.database.NookiDatabase
+import com.example.data.local.database.AppDatabase
 import com.example.data.repository.AttentionRepository
 import com.example.data.repository.ReminderRepository
 import com.example.data.repository.ReminderRepositoryImpl
@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.first
 /** The app's objects, built once and shared by the screens, receivers and services. */
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
-    private val database = NookiDatabase.getInstance(appContext)
+    private val database = AppDatabase.getInstance(appContext)
 
     val scheduler = AndroidExactAlarmScheduler(appContext)
     val reminders: ReminderRepository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
