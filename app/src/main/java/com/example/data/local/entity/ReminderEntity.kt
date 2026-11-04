@@ -4,6 +4,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.example.core.model.RecurrenceRule
+import com.example.core.model.ReminderKind
 import com.example.domain.model.Reminder
 
 /**
@@ -90,8 +92,37 @@ data class ReminderEntity(
     val recurrenceMinutes: Int? = null,
 
     @ColumnInfo(name = "pet_mood_impact")
-    val petMoodImpact: Int = priority.xpReward
+    val petMoodImpact: Int = priority.xpReward,
+
+    // ---- Version 2: the new brief ------------------------------------------------------------
+
+    /** What it is about (medicine, bill, birthday...). Decides warnings and alarm precision. */
+    @ColumnInfo(name = "kind", defaultValue = "'TASK'")
+    val kind: ReminderKind = ReminderKind.TASK,
+
+    /** Warnings before the day, in minutes, comma separated, largest first ("4320,1440"). */
+    @ColumnInfo(name = "lead_minutes", defaultValue = "''")
+    val leadMinutes: String = "",
+
+    /** Calendar repeat. A missed one never ends the chain. */
+    @ColumnInfo(name = "recurrence_rule")
+    val recurrenceRule: RecurrenceRule? = null,
+
+    /** False when the person gave no time. It is kept anyway and brought up in the evening wrap. */
+    @ColumnInfo(name = "has_time", defaultValue = "1")
+    val hasTime: Boolean = true,
+
+    /** When it moved to "You missed" (ignored, swiped away, or medicine never confirmed). */
+    @ColumnInfo(name = "missed_at_millis")
+    val missedAtMillis: Long? = null,
+
+    /** How many times Nooki has asked again about something that needs confirming (medicine). */
+    @ColumnInfo(name = "confirm_attempts", defaultValue = "0")
+    val confirmAttempts: Int = 0
 ) {
+    val leadMinuteList: List<Int>
+        get() = leadMinutes.split(',').mapNotNull { it.trim().toIntOrNull() }
+
     val isActive: Boolean
         get() = status == ReminderStatus.SCHEDULED ||
             status == ReminderStatus.SNOOZED ||
@@ -119,7 +150,13 @@ fun ReminderEntity.toDomain(): Reminder = Reminder(
     status = status,
     snoozeCount = snoozeCount,
     recurrenceMinutes = recurrenceMinutes,
-    petMoodImpact = petMoodImpact
+    petMoodImpact = petMoodImpact,
+    kind = kind,
+    leadMinutes = leadMinuteList,
+    recurrenceRule = recurrenceRule,
+    hasTime = hasTime,
+    missedAtMillis = missedAtMillis,
+    confirmAttempts = confirmAttempts
 )
 
 /**
@@ -138,5 +175,11 @@ fun Reminder.toEntity(): ReminderEntity = ReminderEntity(
     status = status,
     snoozeCount = snoozeCount,
     recurrenceMinutes = recurrenceMinutes,
-    petMoodImpact = petMoodImpact
+    petMoodImpact = petMoodImpact,
+    kind = kind,
+    leadMinutes = leadMinutes.joinToString(","),
+    recurrenceRule = recurrenceRule,
+    hasTime = hasTime,
+    missedAtMillis = missedAtMillis,
+    confirmAttempts = confirmAttempts
 )
