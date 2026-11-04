@@ -89,7 +89,19 @@ data class ReminderEntity(
     val recurrenceMinutes: Int? = null,
 
     @ColumnInfo(name = "pet_mood_impact")
-    val petMoodImpact: Int = priority.xpReward
+    val petMoodImpact: Int = priority.xpReward,
+
+    /** Exam, deadline, AI limit reset, bill or habit. Added in database version 2. */
+    @ColumnInfo(name = "kind", defaultValue = "TASK")
+    val kind: ReminderKind = ReminderKind.TASK,
+
+    /** Heads-ups before [triggerAtMillis], as minutes, comma separated ("10080,1440,120"). */
+    @ColumnInfo(name = "lead_times", defaultValue = "")
+    val leadTimes: String = "",
+
+    /** Calendar repeat; [recurrenceMinutes] stays the fixed-interval repeat. */
+    @ColumnInfo(name = "recurrence_rule")
+    val recurrenceRule: RecurrenceRule? = null
 ) {
     val isActive: Boolean
         get() = status == ReminderStatus.SCHEDULED ||

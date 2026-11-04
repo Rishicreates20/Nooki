@@ -25,20 +25,28 @@ object PetMoodResolver {
     /** A reminder due this soon makes Nooki look up. */
     const val HEADS_UP_WINDOW_MILLIS = 5 * 60_000L
 
+    /**
+     * Workflow kinds change the rules (see [ReminderKind]):
+     * - an exam or deadline keeps Nooki awake a day ahead and Alert in the last 3 hours;
+     * - a missed exam, deadline or bill counts double toward Overwhelmed;
+     * - an AI limit reset is good news: it never stresses Nooki, and while it rings Nooki is Happy.
+     */
     fun resolve(reminders: List<ReminderEntity>, nowMillis: Long): PetMood {
-        val overdue = reminders.filter { it.isOverdue(nowMillis) }
-        val ringing = reminders.count { it.status == ReminderStatus.RINGING }
-        val active = reminders.filter { it.isActive }
+        val (goodNews, chores) = reminders.partition { it.kind.overdueWeight == 0 }
+        val overdue = chores.filter { it.isOverdue(nowMillis) }
+        val ringing = chores.count { it.status == ReminderStatus.RINGING }
+        val active = chores.filter { it.isActive }
 
+        val overdueWeight = overdue.sumOf { it.kind.overdueWeight }
         val urgentOverdue = overdue.any { it.priority == ReminderPriority.URGENT }
-        if (overdue.size >= 3 || (overdue.size >= 2 && urgentOverdue) || (ringing >= 2 && overdue.isNotEmpty())) {
+        if (overdueWeight >= 3 || (overdue.size >= 2 && urgentOverdue) || (ringing >= 2 && overdue.isNotEmpty())) {
             return PetMood.OVERWHELMED
         }
 
         val dueSoon = active.any {
             it.status != ReminderStatus.RINGING &&
                 it.triggerAtMillis >= nowMillis &&
-                it.triggerAtMillis - nowMillis <= HEADS_UP_WINDOW_MILLIS
+                it.triggerAtMillis - nowMillis <= maxOf(HEADS_UP_WINDOW_MILLIS, it.kind.alertWindowMillis)
         }
         if (ringing > 0 || overdue.isNotEmpty() || dueSoon) return PetMood.ALERT
 
@@ -47,8 +55,11 @@ object PetMoodResolver {
                 it.completedAtMillis != null &&
                 nowMillis - it.completedAtMillis in 0..CELEBRATION_WINDOW_MILLIS
         }
-        val upcomingWithinHour = active.any { it.triggerAtMillis - nowMillis in 0..AWAKE_WINDOW_MILLIS }
-        if (recentlyCompleted || upcomingWithinHour) return PetMood.HAPPY
+        val goodNewsArrived = goodNews.any { it.status == ReminderStatus.RINGING }
+        val upcoming = (active + goodNews.filter { it.isActive }).any {
+            it.triggerAtMillis - nowMillis in 0..maxOf(AWAKE_WINDOW_MILLIS, it.kind.awakeWindowMillis)
+        }
+        if (recentlyCompleted || goodNewsArrived || upcoming) return PetMood.HAPPY
 
         return PetMood.SLEEPING
     }

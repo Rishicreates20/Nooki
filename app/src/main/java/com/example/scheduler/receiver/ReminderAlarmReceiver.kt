@@ -33,6 +33,20 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 val scheduler = AndroidExactAlarmScheduler(appContext)
                 val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
 
+                if (intent?.action == AndroidExactAlarmScheduler.ACTION_LEAD_ALERT) {
+                    val reminder = repository.getReminderById(reminderId)
+                    val now = System.currentTimeMillis()
+                    if (reminder != null && reminder.isActive && reminder.triggerAtMillis > now) {
+                        NookiSchedulerTelemetry.record(
+                            source = "ReminderAlarmReceiver",
+                            message = "Heads-up for #$reminderId ('${reminder.title}')"
+                        )
+                        NotificationHelper.showLeadAlertNotification(appContext, reminder, now)
+                        repository.scheduleNextLeadAlert(reminder, now + 1_000L)
+                    }
+                    return@launch
+                }
+
                 val updatedReminder = repository.markRinging(reminderId)
                 if (updatedReminder != null) {
                     NookiSchedulerTelemetry.record(

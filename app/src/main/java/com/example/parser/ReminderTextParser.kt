@@ -1,5 +1,7 @@
 package com.example.parser
 
+import com.example.data.local.entity.RecurrenceRule
+import com.example.data.local.entity.ReminderKind
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
@@ -14,11 +16,20 @@ enum class PriorityHint { HIGH, URGENT }
  * @property triggerAtMillis when to ring, or null when the text had no time in it. The UI then asks
  *   for one instead of guessing.
  * @property priorityHint set only when the text explicitly asked for urgency.
+ * @property kind exam, deadline, AI limit reset, bill or habit, spotted from keywords.
+ * @property leadMinutes heads-ups before the reminder: the kind's defaults, or what the text asked
+ *   for ("remind me 2 days before").
+ * @property recurrenceRule a calendar repeat ("every day", "every monday", "monthly").
+ * @property recurrenceMinutes a fixed-interval repeat ("every 2 hours").
  */
 data class ParsedReminder(
     val title: String,
     val triggerAtMillis: Long?,
-    val priorityHint: PriorityHint? = null
+    val priorityHint: PriorityHint? = null,
+    val kind: ReminderKind = ReminderKind.TASK,
+    val leadMinutes: List<Int> = kind.defaultLeadMinutes,
+    val recurrenceRule: RecurrenceRule? = null,
+    val recurrenceMinutes: Int? = null
 )
 
 /**
@@ -34,6 +45,13 @@ data class ParsedReminder(
  *   "on fri", "next monday"), and dates ("nov 5", "5th december", "on 12/25")
  * - clock times: "at 3:15 PM", "3pm", "15:30", "at 9", "noon", "midnight"
  * - parts of day: "morning" (9:00), "afternoon" (15:00), "evening" (18:00), "tonight" (20:00)
+ *
+ * - workflow kinds: exams ("physics exam on friday"), deadlines ("assignment due monday"), AI limit
+ *   resets ("claude limit resets in 5h"), bills ("pay rent on the 1st"); everything else is a task
+ * - repeats: "every day", "daily", "every morning", "every weekday", "every monday", "weekly",
+ *   "every month", "yearly", "every 2 hours"
+ * - heads-up overrides: "remind me 2 days before", "a day before", "1 hour ahead"
+ * - day of month: "on the 1st", "on the 15th"
  *
  * A time with no day means the next time the clock reaches it. A day with no time means 9:00 AM.
  */
@@ -109,6 +127,59 @@ object ReminderTextParser {
     )
     private val LEADING_CONNECTOR = Regex("$OPT^(?:[\\s,;:.\\-]+|\\b(?:to|about|and|then)\\b)+")
 
+    // ---- workflow ---------------------------------------------------------------------------------
+    // "remind me 2 days before", ", a day before", "ping me an hour ahead", "the day before"
+    private val LEAD_BEFORE = Regex(
+        "$OPT(?:[,;]?\\s*(?:and\\s+)?(?:(?:remind|ping|alert|warn|tell)\\s+me\\s+)?)" +
+            "(?:$AMOUNT\\s*$UNIT|the\\s+(day|night|week))\\s+(?:before(?:hand)?|ahead|prior|early|earlier)\\b"
+    )
+    private val EVERY_INTERVAL = Regex(
+        "$OPT\\b(?:every|each)\\s+(?:(\\d+|two|three|four|five|six|ten|fifteen|twenty|thirty)\\s*)?" +
+            "(minutes?|mins?|hours?|hrs?|hr|h)\\b|\\bhourly\\b"
+    )
+    private val EVERY_DAY = Regex(
+        "$OPT\\b(?:(?:every|each)\\s*(day|night|morning|afternoon|evening)|daily|everyday|nightly)\\b"
+    )
+    private val EVERY_WEEKDAY = Regex("$OPT\\b(?:(?:every|each|on)\\s+weekdays?|weekdays)\\b")
+    private val EVERY_NAMED_DAY = Regex(
+        "$OPT\\b(?:every|each)\\s+(?=(?:sun|mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?)(?:day)?s?\\.?\\b)"
+    )
+    private val EVERY_WEEK = Regex("$OPT\\b(?:(?:every|each|once\\s+a)\\s+week|weekly)\\b")
+    private val EVERY_MONTH = Regex("$OPT\\b(?:(?:every|each|once\\s+a)\\s+month|monthly)\\b")
+    private val EVERY_YEAR = Regex("$OPT\\b(?:(?:every|each|once\\s+a)\\s+year|yearly|annually)\\b")
+
+    // "on the 1st", "the 15th", "on 3rd" (needs the ordinal so "on 5" stays a time)
+    private val DAY_OF_MONTH = Regex("$OPT\\b(?:on\\s+(?:the\\s+)?|the\\s+)(\\d{1,2})(?:st|nd|rd|th)\\b(?!\\s+of\\b)")
+
+    private val AI_TOOL = Regex(
+        "$OPT\\b(?:claude|chat\\s?gpt|gpt[-\\s]?\\d*[a-z]*|openai|gemini|copilot|cursor|perplexity|midjourney|" +
+            "grok|codex|windsurf|deepseek|mistral|llm|ai|opus|sonnet|haiku|anthropic|bard|poe)\\b"
+    )
+    private val AI_LIMIT_WORD = Regex(
+        "$OPT\\b(?:limits?|quotas?|credits?|usage|caps?|tokens?|rate[-\\s]?limit(?:ed)?|messages?|resets?|refills?|cooldown)\\b"
+    )
+    private val EXAM_WORD = Regex(
+        "$OPT\\b(?:exams?|midterms?|mid[-\\s]?sems?|end[-\\s]?sems?|finals|quiz(?:zes)?|viva|tests?|boards|olympiad|entrance)\\b"
+    )
+    private val BILL_WORD = Regex(
+        "$OPT\\b(?:bills?|rent|emi|fees?|subscriptions?|renews?|renewal|recharge|premium|insurance|pay|payment|invoice|" +
+            "electricity|wifi|broadband|netflix|spotify|prime|tax(?:es)?)\\b"
+    )
+    private val DEADLINE_WORD = Regex(
+        "$OPT\\b(?:deadline|due|submit|submission|assignment|homework|hand\\s+in|turn\\s+in|last\\s+date|apply|" +
+            "application|register|registration|project|report|thesis|essay|lab\\s+record)\\b"
+    )
+
+    /** Picks the workflow kind from the words in [text]. Recurring chores become habits. */
+    fun inferKind(text: String, recurring: Boolean = false): ReminderKind = when {
+        AI_TOOL.containsMatchIn(text) && AI_LIMIT_WORD.containsMatchIn(text) -> ReminderKind.AI_LIMIT
+        EXAM_WORD.containsMatchIn(text) -> ReminderKind.EXAM
+        BILL_WORD.containsMatchIn(text) -> ReminderKind.BILL
+        DEADLINE_WORD.containsMatchIn(text) && !recurring -> ReminderKind.DEADLINE
+        recurring -> ReminderKind.HABIT
+        else -> ReminderKind.TASK
+    }
+
     fun parse(
         input: String,
         nowMillis: Long = System.currentTimeMillis(),
@@ -133,6 +204,65 @@ object ReminderTextParser {
         while (URGENT.containsMatchIn(text)) consume(URGENT)
         if (consume(IMPORTANT) != null && priority == null) priority = PriorityHint.HIGH
 
+        // ---- workflow: heads-up overrides, repeats, kind ----------------------------------------
+        // Read the kind before time words are stripped, so "exam on friday" still says exam.
+        val kindSource = text
+        var customLeads: MutableList<Int>? = null
+        while (true) {
+            val m = consume(LEAD_BEFORE) ?: break
+            val minutes = if (m.groupValues[3].isNotEmpty()) {
+                if (m.groupValues[3].equals("week", ignoreCase = true)) 7 * 24 * 60 else 24 * 60
+            } else {
+                (amount(m.groupValues[1]) * unitMillis(m.groupValues[2]) / MINUTE).toInt()
+            }
+            if (minutes > 0) (customLeads ?: mutableListOf<Int>().also { customLeads = it }).add(minutes)
+        }
+
+        var recurrenceRule: RecurrenceRule? = null
+        var recurrenceMinutes: Int? = null
+        var recurringImpliedHour: Int? = null
+        consume(EVERY_INTERVAL)?.let { m ->
+            val n = if (m.groupValues[1].isEmpty()) 1.0 else amount(m.groupValues[1])
+            val unit = m.groupValues[2].ifEmpty { "h" }
+            recurrenceMinutes = (n * unitMillis(unit) / MINUTE).toInt().coerceAtLeast(1)
+        }
+        if (recurrenceMinutes == null) {
+            when {
+                consume(EVERY_WEEKDAY) != null -> recurrenceRule = RecurrenceRule.WEEKDAYS
+                consume(EVERY_DAY)?.also { m ->
+                    recurringImpliedHour = when (m.groupValues[1].lowercase()) {
+                        "morning" -> 9
+                        "afternoon" -> 15
+                        "evening" -> 18
+                        "night" -> 20
+                        else -> null
+                    }
+                } != null -> recurrenceRule = RecurrenceRule.DAILY
+                EVERY_NAMED_DAY.find(text) != null -> {
+                    // "every monday": keep the weekday for the day parser below, as "on monday".
+                    val m = EVERY_NAMED_DAY.find(text)!!
+                    text = text.replaceRange(m.range, " on ")
+                    recurrenceRule = RecurrenceRule.WEEKLY
+                }
+                consume(EVERY_WEEK) != null -> recurrenceRule = RecurrenceRule.WEEKLY
+                consume(EVERY_MONTH) != null -> recurrenceRule = RecurrenceRule.MONTHLY
+                consume(EVERY_YEAR) != null -> recurrenceRule = RecurrenceRule.YEARLY
+            }
+        }
+        val recurring = recurrenceRule != null || recurrenceMinutes != null
+        val kind = inferKind(kindSource, recurring)
+        val leads = customLeads?.let { list -> list.filter { it > 0 }.distinct().sortedDescending() } ?: kind.defaultLeadMinutes
+
+        fun result(title: String, trigger: Long?) = ParsedReminder(
+            title = title,
+            triggerAtMillis = trigger,
+            priorityHint = priority,
+            kind = kind,
+            leadMinutes = leads,
+            recurrenceRule = recurrenceRule,
+            recurrenceMinutes = recurrenceMinutes
+        )
+
         // ---- relative offsets win over everything else -----------------------------------------
         var offsetMillis: Long? = null
         consume(HOUR_AND_HALF)?.let { offsetMillis = 90 * MINUTE }
@@ -150,14 +280,15 @@ object ReminderTextParser {
         if (offsetMillis != null) {
             // Strip any stray day words so they don't end up in the title ("in 2 hours today").
             consume(RELATIVE_DAY)
-            return ParsedReminder(cleanTitle(text, original), nowMillis + offsetMillis!!, priority)
+            return result(cleanTitle(text, original), nowMillis + offsetMillis!!)
         }
 
         // ---- day -------------------------------------------------------------------------------
         var dayOffset: Int? = null
         var absoluteDate: Triple<Int, Int, Boolean>? = null // month(0-11), day, yearExplicitlyRollable
         var weekday: Pair<Int, Boolean>? = null // calendar weekday, "next"
-        var impliedHour: Int? = null
+        var impliedHour: Int? = recurringImpliedHour
+        var dayOfMonth: Int? = null
 
         if (consume(DAY_AFTER_TOMORROW) != null) {
             dayOffset = 2
@@ -189,6 +320,11 @@ object ReminderTextParser {
                 val month = m.groupValues[1].toInt() - 1
                 val day = m.groupValues[2].toInt()
                 if (month in 0..11 && day in 1..31) absoluteDate = Triple(month, day, true)
+            }
+        }
+        if (dayOffset == null && weekday == null && absoluteDate == null) {
+            consume(DAY_OF_MONTH)?.let { m ->
+                m.groupValues[1].toInt().takeIf { it in 1..31 }?.let { dayOfMonth = it }
             }
         }
 
@@ -249,10 +385,12 @@ object ReminderTextParser {
             hour = hour!! + 12 // "tonight at 9"
         }
 
-        val hasDay = dayOffset != null || weekday != null || absoluteDate != null
+        val hasDay = dayOffset != null || weekday != null || absoluteDate != null || dayOfMonth != null
         // "today" alone has no sensible default hour (9 AM may already be gone), so ask instead.
         if ((!hasDay || dayOffset == 0) && hour == null) {
-            return ParsedReminder(cleanTitle(text, original), null, priority)
+            // "drink water every 2 hours" with no time starts one interval from now.
+            val intervalStart = recurrenceMinutes?.let { nowMillis + it * MINUTE }
+            return result(cleanTitle(text, original), if (dayOffset == null) intervalStart else null)
         }
 
         // ---- resolve to an instant -------------------------------------------------------------
@@ -302,6 +440,21 @@ object ReminderTextParser {
                     cal.set(Calendar.DAY_OF_MONTH, 29)
                 }
             }
+            dayOfMonth != null -> {
+                // The next time the month reaches that day; short months use their last day.
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                applyClock()
+                fun placeDay() = cal.set(
+                    Calendar.DAY_OF_MONTH,
+                    dayOfMonth!!.coerceAtMost(cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+                )
+                placeDay()
+                if (cal.timeInMillis <= nowMillis) {
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    cal.add(Calendar.MONTH, 1)
+                    placeDay()
+                }
+            }
             else -> {
                 applyClock()
                 // Time only: the next time the clock reads that.
@@ -309,7 +462,7 @@ object ReminderTextParser {
             }
         }
 
-        return ParsedReminder(cleanTitle(text, original), cal.timeInMillis, priority)
+        return result(cleanTitle(text, original), cal.timeInMillis)
     }
 
     private fun cleanTitle(remaining: String, original: String): String {

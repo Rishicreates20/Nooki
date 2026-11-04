@@ -10,6 +10,7 @@ import androidx.core.net.toUri
 import com.example.MainActivity
 import com.example.data.local.entity.ReminderEntity
 import com.example.scheduler.receiver.ReminderAlarmReceiver
+import com.example.workflow.LeadAlert
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,11 @@ interface ExactAlarmScheduler {
     fun scheduleExact(reminder: ReminderEntity): ScheduleResult
     fun cancel(reminderId: Long)
     fun buildExactAlarmPermissionIntent(): Intent?
+
+    /** Schedules the next heads-up before an exam, deadline or bill. Replaces any earlier one. */
+    fun scheduleLeadAlert(reminder: ReminderEntity, alert: LeadAlert) {}
+
+    fun cancelLeadAlert(reminderId: Long) {}
 }
 
 /**
@@ -206,6 +212,46 @@ class AndroidExactAlarmScheduler(
         )
     }
 
+    override fun scheduleLeadAlert(reminder: ReminderEntity, alert: LeadAlert) {
+        val manager = alarmManager ?: return
+        val pendingIntent = leadAlertPendingIntent(reminder.id)
+        val at = alert.atMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
+        // A heads-up should be on time but doesn't deserve the status-bar alarm clock icon.
+        try {
+            if (canScheduleExactAlarms()) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent)
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent)
+            }
+        } catch (_: SecurityException) {
+            runCatching { manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent) }
+        }
+        NookiSchedulerTelemetry.record(
+            source = "ExactAlarmScheduler",
+            message = "Heads-up for #${reminder.id} ('${reminder.title}') ${alert.leadMinutes} min before, at ${formatTime(at)}"
+        )
+    }
+
+    override fun cancelLeadAlert(reminderId: Long) {
+        val manager = alarmManager ?: return
+        val pendingIntent = leadAlertPendingIntent(reminderId)
+        runCatching {
+            manager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+    }
+
+    // Same request code as the main alarm but a different action, so the two never replace each other.
+    private fun leadAlertPendingIntent(reminderId: Long): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        reminderId.toInt(),
+        Intent(context, ReminderAlarmReceiver::class.java).apply {
+            action = ACTION_LEAD_ALERT
+            putExtra(EXTRA_REMINDER_ID, reminderId)
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
     override fun buildExactAlarmPermissionIntent(): Intent? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
@@ -237,6 +283,7 @@ class AndroidExactAlarmScheduler(
 
     companion object {
         const val ACTION_TRIGGER_REMINDER_ALARM = "com.example.nooki.ACTION_TRIGGER_REMINDER_ALARM"
+        const val ACTION_LEAD_ALERT = "com.example.nooki.ACTION_LEAD_ALERT"
         const val ACTION_COMPLETE_REMINDER = "com.example.nooki.ACTION_COMPLETE_REMINDER"
         const val ACTION_SNOOZE_REMINDER = "com.example.nooki.ACTION_SNOOZE_REMINDER"
         const val ACTION_DISMISS_REMINDER = "com.example.nooki.ACTION_DISMISS_REMINDER"

@@ -117,6 +117,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.database.NookiDatabase
 import com.example.data.local.entity.ReminderCategory
+import com.example.data.local.entity.ReminderKind
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
@@ -135,6 +136,7 @@ import com.example.ui.components.MoodBadge
 import com.example.ui.components.NookiSpeechBubble
 import com.example.ui.components.QuickAddSheet
 import com.example.ui.components.describeTrigger
+import com.example.workflow.WorkflowSchedule
 import com.example.ui.components.inferCategory
 import com.example.ui.components.toReminderPriority
 import com.example.feedback.PetFeedback
@@ -323,7 +325,11 @@ fun NookiMilestoneOneWorkbench(
                         rawInput = request.rawInput,
                         triggerAtMillis = triggerAt,
                         priority = parsed.priorityHint.toReminderPriority(),
-                        category = inferCategory(parsed.title)
+                        category = inferCategory(parsed.title),
+                        recurrenceMinutes = parsed.recurrenceMinutes,
+                        kind = parsed.kind,
+                        leadMinutes = parsed.leadMinutes,
+                        recurrenceRule = parsed.recurrenceRule
                     )
                     eventTopic = "added_${entity.id}" to PetTopic.Added(
                         PetMood.HAPPY,
@@ -1101,12 +1107,31 @@ private fun ReminderQueueItemCard(
             diffMillis <= 0L -> "Due now"
             diffMillis < 60_000L -> "in ${diffMillis / 1000L}s"
             diffMillis < 3_600_000L -> "in ${diffMillis / 60_000L}m ${(diffMillis % 60_000L) / 1000L}s"
-            else -> "in ${diffMillis / 3_600_000L}h ${(diffMillis % 3_600_000L) / 60_000L}m"
+            diffMillis < 24 * 3_600_000L -> "in ${diffMillis / 3_600_000L}h ${(diffMillis % 3_600_000L) / 60_000L}m"
+            else -> WorkflowSchedule.countdown(reminder.triggerAtMillis, nowMillis)
         }
     }
 
-    val formattedClock = remember(reminder.triggerAtMillis) {
-        SimpleDateFormat("h:mm:ss a", Locale.getDefault()).format(Date(reminder.triggerAtMillis))
+    val farAway = diffMillis >= 24 * 3_600_000L
+    val formattedClock = remember(reminder.triggerAtMillis, farAway) {
+        SimpleDateFormat(if (farAway) "EEE, MMM d · h:mm a" else "h:mm:ss a", Locale.getDefault())
+            .format(Date(reminder.triggerAtMillis))
+    }
+    val workflowLine = remember(reminder.triggerAtMillis, reminder.leadTimes, reminder.recurrenceRule, nowMillis / 60_000L) {
+        val leads = WorkflowSchedule.upcomingLeads(
+            reminder.triggerAtMillis,
+            WorkflowSchedule.decodeLeadTimes(reminder.leadTimes),
+            nowMillis
+        )
+        listOfNotNull(
+            leads.takeIf { it.isNotEmpty() }?.let { list ->
+                "Heads-ups " + list.joinToString(", ") { WorkflowSchedule.describeLead(it) } + " before"
+            },
+            reminder.recurrenceRule?.label,
+            reminder.recurrenceMinutes?.takeIf { reminder.recurrenceRule == null }?.let {
+                "Every " + WorkflowSchedule.describeLead(it)
+            }
+        ).joinToString(" · ")
     }
 
     Card(
@@ -1131,14 +1156,17 @@ private fun ReminderQueueItemCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    val isWorkflow = reminder.kind != ReminderKind.TASK
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = if (isWorkflow) MaterialTheme.colorScheme.tertiaryContainer
+                        else MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Text(
-                            text = reminder.category.badgeText,
+                            text = if (isWorkflow) reminder.kind.badgeText else reminder.category.badgeText,
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = if (isWorkflow) MaterialTheme.colorScheme.onTertiaryContainer
+                            else MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -1183,6 +1211,14 @@ private fun ReminderQueueItemCard(
             if (reminder.notes.isNotBlank()) {
                 Text(
                     text = reminder.notes,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (workflowLine.isNotBlank()) {
+                Text(
+                    text = workflowLine,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
