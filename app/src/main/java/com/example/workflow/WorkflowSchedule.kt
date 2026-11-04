@@ -66,6 +66,23 @@ object WorkflowSchedule {
         }
     }
 
+    /** The next time the clock reads [minutesOfDay], for the morning brief and evening wrap. */
+    fun nextDaily(
+        minutesOfDay: Int,
+        nowMillis: Long,
+        timeZone: TimeZone = TimeZone.getDefault()
+    ): Long {
+        val cal = Calendar.getInstance(timeZone, Locale.US).apply {
+            timeInMillis = nowMillis
+            set(Calendar.HOUR_OF_DAY, minutesOfDay / 60)
+            set(Calendar.MINUTE, minutesOfDay % 60)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (cal.timeInMillis <= nowMillis) cal.add(Calendar.DAY_OF_YEAR, 1)
+        return cal.timeInMillis
+    }
+
     /**
      * The first occurrence of [rule] after [nowMillis], keeping [triggerAtMillis]'s clock time. A
      * monthly bill on the 31st lands on the last day of shorter months, then goes back to the 31st.

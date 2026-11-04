@@ -87,4 +87,16 @@ class WorkflowScheduleTest {
         val leap = at(2028, Calendar.FEBRUARY, 29, 9, 0)
         assertEquals(at(2029, Calendar.FEBRUARY, 28, 9, 0), WorkflowSchedule.nextOccurrence(leap, RecurrenceRule.YEARLY, leap, zone))
     }
+
+    @Test
+    fun `next daily lands later today or tomorrow`() {
+        val zone = TimeZone.getTimeZone("Asia/Kolkata")
+        val cal = Calendar.getInstance(zone, Locale.US).apply {
+            clear()
+            set(2026, Calendar.NOVEMBER, 4, 11, 0, 0)
+        }
+        val now = cal.timeInMillis
+        assertEquals(now + 10 * 3_600_000L, WorkflowSchedule.nextDaily(21 * 60, now, zone))
+        assertEquals(now + 21 * 3_600_000L, WorkflowSchedule.nextDaily(8 * 60, now, zone))
+    }
 }

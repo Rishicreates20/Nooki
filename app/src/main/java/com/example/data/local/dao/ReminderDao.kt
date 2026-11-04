@@ -51,7 +51,7 @@ interface ReminderDao {
     @Query(
         """
         SELECT * FROM reminders 
-        WHERE status IN ('SCHEDULED', 'SNOOZED', 'RINGING')
+        WHERE status IN ('SCHEDULED', 'SNOOZED', 'RINGING') AND undated = 0
         ORDER BY trigger_at_millis ASC
         """
     )
@@ -91,6 +91,36 @@ interface ReminderDao {
         status: ReminderStatus,
         snoozeCount: Int
     )
+
+    @Query("UPDATE reminders SET next_spawned = 1 WHERE id = :id")
+    suspend fun markNextSpawned(id: Long)
+
+    @Query("UPDATE reminders SET ask_count = :askCount WHERE id = :id")
+    suspend fun updateAskCount(id: Long, askCount: Int)
+
+    @Query("UPDATE reminders SET keep_asking = :keepAsking WHERE id = :id")
+    suspend fun updateKeepAsking(id: Long, keepAsking: Boolean)
+
+    /** Moves a reminder to a new time, and gives an undated one its first time. */
+    @Query(
+        """
+        UPDATE reminders
+        SET trigger_at_millis = :triggerAtMillis, status = 'SCHEDULED', undated = 0, ask_count = 0
+        WHERE id = :id
+        """
+    )
+    suspend fun reschedule(id: Long, triggerAtMillis: Long)
+
+    @Query(
+        """
+        SELECT * FROM reminders
+        WHERE status IN ('SCHEDULED', 'SNOOZED', 'RINGING', 'MISSED')
+          AND undated = 0 AND trigger_at_millis <= :untilMillis
+          AND recurrence_rule IS NULL AND recurrence_minutes IS NULL
+        ORDER BY trigger_at_millis ASC
+        """
+    )
+    suspend fun getOpenOneOffsUntil(untilMillis: Long): List<ReminderEntity>
 
     @Query("DELETE FROM reminders WHERE id = :id")
     suspend fun deleteReminderById(id: Long)

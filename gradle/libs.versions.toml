@@ -42,6 +42,8 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 sceneview = "2.3.3"
 graphicsShapes = "1.0.1"
+glance = "1.2.0"
+roborazzi = "1.51.0"
 
 
 [libraries]
@@ -98,6 +100,9 @@ androidx-credentials-play-services = { group = "androidx.credentials", name = "c
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 sceneview = { group = "io.github.sceneview", name = "sceneview", version.ref = "sceneview" }
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
+androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
 
 
 [plugins]

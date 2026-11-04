@@ -4,19 +4,17 @@ import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.data.local.database.NookiDatabase
-import com.example.data.repository.ReminderRepositoryImpl
-import com.example.scheduler.AndroidExactAlarmScheduler
+import com.example.NookiGraph
 import com.example.scheduler.NookiSchedulerTelemetry
+import com.example.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * BroadcastReceiver that restores all pending exact alarms when the device finishes booting,
- * when the app package is updated, when system time/timezone is changed, or when
- * [AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED] is broadcast.
+ * Restores every pending alarm and the daily briefs when the device finishes booting, when the app
+ * is updated, when the time or time zone changes, or when exact alarm permission changes.
  */
 class BootCompletedReceiver : BroadcastReceiver() {
 
@@ -29,11 +27,10 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val database = NookiDatabase.getInstance(appContext)
-                val scheduler = AndroidExactAlarmScheduler(appContext)
-                val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
-
-                val report = repository.reconcileAndRescheduleAlarms()
+                val graph = NookiGraph.get(appContext)
+                val report = graph.reminders.reconcileAndRescheduleAlarms()
+                graph.rhythm.arm(graph.settings.current())
+                WidgetRefresher.refresh(appContext)
                 NookiSchedulerTelemetry.record(
                     source = "BootCompletedReceiver",
                     message = "Processed '$action': rescheduled=${report.rescheduledCount}, markedMissed=${report.markedMissedCount}, exactPermitted=${report.exactAlarmsPermitted}"
@@ -53,7 +50,6 @@ class BootCompletedReceiver : BroadcastReceiver() {
     companion object {
         val SUPPORTED_ACTIONS = setOf(
             Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_LOCKED_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,

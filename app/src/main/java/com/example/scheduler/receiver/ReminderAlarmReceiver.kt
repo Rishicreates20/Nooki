@@ -3,11 +3,11 @@ package com.example.scheduler.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.data.local.database.NookiDatabase
-import com.example.data.repository.ReminderRepositoryImpl
+import com.example.NookiGraph
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
 import com.example.scheduler.NotificationHelper
+import com.example.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,8 +15,7 @@ import kotlinx.coroutines.launch
 
 /**
  * BroadcastReceiver triggered when an exact or fallback [android.app.AlarmManager] alarm fires.
- * Uses [goAsync] to safely transition the reminder to RINGING in Room and post a high-priority
- * desk-pet notification.
+ * Uses [goAsync] to safely update Room and post the notification.
  */
 class ReminderAlarmReceiver : BroadcastReceiver() {
 
@@ -29,13 +28,11 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val database = NookiDatabase.getInstance(appContext)
-                val scheduler = AndroidExactAlarmScheduler(appContext)
-                val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
+                val repository = NookiGraph.get(appContext).reminders
+                val now = System.currentTimeMillis()
 
                 if (intent?.action == AndroidExactAlarmScheduler.ACTION_LEAD_ALERT) {
                     val reminder = repository.getReminderById(reminderId)
-                    val now = System.currentTimeMillis()
                     if (reminder != null && reminder.isActive && reminder.triggerAtMillis > now) {
                         NookiSchedulerTelemetry.record(
                             source = "ReminderAlarmReceiver",
@@ -47,20 +44,20 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                val updatedReminder = repository.markRinging(reminderId)
-                if (updatedReminder != null) {
+                val ringing = repository.onAlarmFired(reminderId, now)
+                if (ringing != null) {
                     NookiSchedulerTelemetry.record(
                         source = "ReminderAlarmReceiver",
-                        message = "Alarm fired for #$reminderId ('${updatedReminder.title}') -> status = RINGING"
+                        message = "Alarm fired for #$reminderId ('${ringing.title}') -> status = RINGING, ask ${ringing.askCount}"
                     )
-                    NotificationHelper.showReminderAlarmNotification(appContext, updatedReminder)
+                    NotificationHelper.showReminderAlarmNotification(appContext, ringing)
                 } else {
                     NookiSchedulerTelemetry.record(
                         source = "ReminderAlarmReceiver",
-                        message = "Alarm fired for #$reminderId, but entity was no longer in Room DB.",
-                        isWarning = true
+                        message = "Alarm fired for #$reminderId, but it no longer needs to ring."
                     )
                 }
+                WidgetRefresher.refresh(appContext)
             } catch (t: Throwable) {
                 NookiSchedulerTelemetry.record(
                     source = "ReminderAlarmReceiver",

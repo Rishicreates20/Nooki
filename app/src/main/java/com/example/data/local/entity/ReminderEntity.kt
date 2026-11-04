@@ -19,7 +19,7 @@ enum class ReminderPriority(val label: String, val xpReward: Int) {
  * Desk-pet reminder categories aligned with Nooki's animations and desk companions.
  */
 enum class ReminderCategory(val label: String, val badgeText: String) {
-    DESK(label = "Desk Task", badgeText = "DESK"),
+    DESK(label = "Task", badgeText = "TASK"),
     HYDRATION(label = "Hydration", badgeText = "SIP"),
     STRETCH(label = "Posture & Stretch", badgeText = "MOVE"),
     FOCUS(label = "Deep Focus", badgeText = "FOCUS"),
@@ -101,7 +101,25 @@ data class ReminderEntity(
 
     /** Calendar repeat; [recurrenceMinutes] stays the fixed-interval repeat. */
     @ColumnInfo(name = "recurrence_rule")
-    val recurrenceRule: RecurrenceRule? = null
+    val recurrenceRule: RecurrenceRule? = null,
+
+    /** No time was given. It stays on the list without an alarm and comes up in the evening wrap. */
+    @ColumnInfo(name = "undated", defaultValue = "0")
+    val undated: Boolean = false,
+
+    /** Medicine and critical things ring again until confirmed, up to [MAX_ASKS] times. */
+    @ColumnInfo(name = "keep_asking", defaultValue = "0")
+    val keepAsking: Boolean = false,
+
+    @ColumnInfo(name = "ask_count", defaultValue = "0")
+    val askCount: Int = 0,
+
+    @ColumnInfo(name = "source", defaultValue = "TYPED")
+    val source: ReminderSource = ReminderSource.TYPED,
+
+    /** True once the following occurrence exists, so a series never forks or dies. */
+    @ColumnInfo(name = "next_spawned", defaultValue = "0")
+    val nextSpawned: Boolean = false
 ) {
     val isActive: Boolean
         get() = status == ReminderStatus.SCHEDULED ||
@@ -109,7 +127,13 @@ data class ReminderEntity(
             status == ReminderStatus.RINGING
 
     fun isOverdue(nowMillis: Long = System.currentTimeMillis()): Boolean =
-        status == ReminderStatus.MISSED ||
-            (status == ReminderStatus.RINGING && nowMillis - triggerAtMillis > 5 * 60_000L) ||
-            ((status == ReminderStatus.SCHEDULED || status == ReminderStatus.SNOOZED) && triggerAtMillis < nowMillis)
+        !undated && (
+            status == ReminderStatus.MISSED ||
+                (status == ReminderStatus.RINGING && nowMillis - triggerAtMillis > 5 * 60_000L) ||
+                ((status == ReminderStatus.SCHEDULED || status == ReminderStatus.SNOOZED) && triggerAtMillis < nowMillis)
+            )
+
+    companion object {
+        const val MAX_ASKS = 3
+    }
 }

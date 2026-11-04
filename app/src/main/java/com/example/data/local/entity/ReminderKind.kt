@@ -24,11 +24,23 @@ enum class ReminderKind(
     DEADLINE("Deadline", "DUE", listOf(3 * DAY_MIN, DAY_MIN, 3 * 60), 2, 24 * HOUR, 3 * HOUR),
     AI_LIMIT("AI limit reset", "AI", emptyList(), 0, 60 * MINUTE, 0L),
     BILL("Bill or renewal", "BILL", listOf(3 * DAY_MIN, DAY_MIN), 2, 24 * HOUR, 60 * MINUTE),
-    HABIT("Habit", "HABIT", emptyList(), 1, 60 * MINUTE, 5 * MINUTE);
+    HABIT("Habit", "HABIT", emptyList(), 1, 60 * MINUTE, 5 * MINUTE),
+    BIRTHDAY("Birthday", "BIRTHDAY", listOf(7 * DAY_MIN, DAY_MIN), 1, 24 * HOUR, 60 * MINUTE),
+    EXPIRY("Expiry", "EXPIRES", listOf(30 * DAY_MIN, 7 * DAY_MIN, DAY_MIN), 2, 24 * HOUR, 60 * MINUTE),
+    MEDICINE("Medicine", "MEDICINE", emptyList(), 2, 60 * MINUTE, 5 * MINUTE);
 
     companion object {
         fun fromName(value: String?): ReminderKind =
             entries.firstOrNull { it.name == value } ?: TASK
+    }
+}
+
+/** Where a reminder came from, so Nooki can show it and we can measure what actually gets used. */
+enum class ReminderSource {
+    TYPED, VOICE, SHARED, NOTICED, STARTER;
+
+    companion object {
+        fun fromName(value: String?): ReminderSource = entries.firstOrNull { it.name == value } ?: TYPED
     }
 }
 

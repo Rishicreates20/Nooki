@@ -1,19 +1,18 @@
 <resources>
     <string name="app_name">Nooki</string>
-    <string name="nooki_subtitle">The Desk-Pet Reminder</string>
-    <string name="channel_alarms_name">Nooki Desk-Pet Reminders</string>
-    <string name="channel_alarms_description">Exact desk-pet reminder alerts, chimes, and task nudges from Nooki</string>
-    <string name="action_complete">Complete (+XP)</string>
-    <string name="action_snooze">Snooze 5m</string>
-    <string name="action_dismiss">Dismiss</string>
-    <string name="tab_desk_pet">Desk Pet</string>
-    <string name="tab_scheduler_lab">Milestone 1 Lab</string>
-    <string name="add_reminder_title">New Desk Reminder</string>
-    <string name="input_reminder_hint">e.g. Drink warm tea in 15 mins</string>
-    <string name="btn_schedule_exact">Schedule Exact Alarm</string>
-    <string name="btn_fire_test_alarm">Fire Test Alarm Now</string>
-    <string name="btn_simulate_boot">Simulate Boot Recovery</string>
-    <string name="empty_reminders_tip">Nooki is resting peacefully on your desk. Add a reminder below to keep Nooki energized!</string>
-    <string name="channel_heads_up_name">Heads-ups before exams and deadlines</string>
-    <string name="channel_heads_up_description">Nooki\'s early reminders a week, a day or a few hours before exams, deadlines and bills.</string>
+    <string name="channel_alarms_name">Reminders</string>
+    <string name="channel_alarms_description">Reminders that ring when something is due</string>
+    <string name="channel_heads_up_name">Early warnings</string>
+    <string name="channel_heads_up_description">Quiet warnings before exams, bills, birthdays and expiries</string>
+    <string name="channel_briefs_name">Morning brief and evening wrap</string>
+    <string name="channel_briefs_description">One calm note at the start and end of the day</string>
+    <string name="action_complete">Done</string>
+    <string name="action_snooze_1h">In 1 hour</string>
+    <string name="action_snooze_10m">In 10 min</string>
+    <string name="action_tomorrow">Tomorrow</string>
+    <string name="action_move_tomorrow">Move to tomorrow</string>
+    <string name="widget_description">What needs you, and one tap to tell Nooki</string>
+    <string name="shortcut_tell_nooki">Tell Nooki</string>
+    <string name="tile_label">Tell Nooki</string>
+    <string name="process_text_label">Remind me with Nooki</string>
 </resources>

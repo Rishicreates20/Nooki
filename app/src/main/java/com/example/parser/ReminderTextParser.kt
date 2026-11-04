@@ -20,7 +20,8 @@ enum class PriorityHint { HIGH, URGENT }
  * @property leadMinutes heads-ups before the reminder: the kind's defaults, or what the text asked
  *   for ("remind me 2 days before").
  * @property recurrenceRule a calendar repeat ("every day", "every monday", "monthly").
- * @property recurrenceMinutes a fixed-interval repeat ("every 2 hours").
+ * @property recurrenceMinutes a fixed-interval repeat ("every 2 hours", "every 7 days").
+ * @property keepAsking ring again until confirmed. Medicine does this without being told.
  */
 data class ParsedReminder(
     val title: String,
@@ -29,7 +30,8 @@ data class ParsedReminder(
     val kind: ReminderKind = ReminderKind.TASK,
     val leadMinutes: List<Int> = kind.defaultLeadMinutes,
     val recurrenceRule: RecurrenceRule? = null,
-    val recurrenceMinutes: Int? = null
+    val recurrenceMinutes: Int? = null,
+    val keepAsking: Boolean = kind == ReminderKind.MEDICINE
 )
 
 /**
@@ -53,6 +55,10 @@ data class ParsedReminder(
  * - heads-up overrides: "remind me 2 days before", "a day before", "1 hour ahead"
  * - day of month: "on the 1st", "on the 15th"
  *
+ * - Hindi and Hinglish: [HinglishNormalizer] rewrites "kal subah 9 baje" and "कल शाम 6 बजे" into the
+ *   English this parser reads, so every rule below works for all three
+ * - dates are day first, the way India writes them: "on 12/11" is 12 November
+ *
  * A time with no day means the next time the clock reaches it. A day with no time means 9:00 AM.
  */
 object ReminderTextParser {
@@ -71,7 +77,7 @@ object ReminderTextParser {
 
     private const val UNIT =
         "(minutes?|mins?|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|w)"
-    private const val AMOUNT = "(an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|\\d+(?:\\.\\d+)?)"
+    private const val AMOUNT = "(an?|one|two|three|four|five|six|seven|ten|fifteen|twenty|thirty|\\d+(?:\\.\\d+)?)"
 
     // "in 1h 30m", "in 2 hours and 15 minutes", "in an hour", "after 10 min"
     private val RELATIVE = Regex(
@@ -101,9 +107,11 @@ object ReminderTextParser {
     private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
     private const val MONTH =
         "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
-    private val MONTH_DAY = Regex("$OPT\\b(?:on\\s+)?$MONTH\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b")
-    private val DAY_MONTH = Regex("$OPT\\b(?:on\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?$MONTH\\b")
-    private val NUMERIC_DATE = Regex("$OPT\\b(?:on\\s+)(\\d{1,2})/(\\d{1,2})\\b")
+    private val MONTH_DAY = Regex("$OPT\\b(?:(?:on|by)\\s+)?$MONTH\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(20\\d{2})\\b)?")
+    private val DAY_MONTH = Regex("$OPT\\b(?:(?:on|by)\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?$MONTH\\b(?:,?\\s+(20\\d{2})\\b)?")
+    // Day first. "on 12/11", or with a year, "12/11/2026" and "12-11-26", which need no lead-in.
+    private val NUMERIC_DATE = Regex("$OPT\\b(?:on|by)\\s+(\\d{1,2})[/-](\\d{1,2})\\b")
+    private val NUMERIC_DATE_YEAR = Regex("$OPT\\b(?:(?:on|by)\\s+)?(\\d{1,2})[/-](\\d{1,2})[/-](20\\d{2}|\\d{2})\\b")
 
     // "at 3:15 pm", "3pm", "at 10.30am"
     // "2 a day" must not become 2 AM, so a spaced meridiem needs its "m".
@@ -136,6 +144,10 @@ object ReminderTextParser {
     private val EVERY_INTERVAL = Regex(
         "$OPT\\b(?:every|each)\\s+(?:(\\d+|two|three|four|five|six|ten|fifteen|twenty|thirty)\\s*)?" +
             "(minutes?|mins?|hours?|hrs?|hr|h)\\b|\\bhourly\\b"
+    )
+    // "every 3 days", "every 2 weeks": counted from when you did it, so it suits keeping in touch.
+    private val EVERY_N_DAYS = Regex(
+        "$OPT\\b(?:every|each)\\s+(\\d+|two|three|four|five|six|seven|ten|fifteen|twenty|thirty)\\s*(days?|weeks?)\\b"
     )
     private val EVERY_DAY = Regex(
         "$OPT\\b(?:(?:every|each)\\s*(day|night|morning|afternoon|evening)|daily|everyday|nightly)\\b"
@@ -170,10 +182,23 @@ object ReminderTextParser {
             "application|register|registration|project|report|thesis|essay|lab\\s+record)\\b"
     )
 
+    private val BIRTHDAY_WORD = Regex("$OPT\\b(?:birthdays?|b'?days?|anniversary|janamdin|janmdin|saalgirah)\\b")
+    private val MEDICINE_WORD = Regex(
+        "$OPT(?:\\b(?:medicines?|meds|tablets?|pills?|capsules?|syrup|insulin|inhaler|dawai|dawa|goli)\\b|दवाई|दवा|गोली)"
+    )
+    private val SHOPPING_WORD = Regex("$OPT\\b(?:buy|order|get|kharid\\w*|lana|lao)\\b")
+    private val EXPIRY_WORD = Regex(
+        "$OPT\\b(?:expir\\w+|warranty|guarantee|passport|licen[cs]e|valid\\s+(?:till|until)|puc)\\b"
+    )
+    private val STAY_IN_TOUCH_WORD = Regex("$OPT\\b(?:call|phone|ring|visit|meet|message|text|baat)\\b")
+
     /** Picks the workflow kind from the words in [text]. Recurring chores become habits. */
     fun inferKind(text: String, recurring: Boolean = false): ReminderKind = when {
         AI_TOOL.containsMatchIn(text) && AI_LIMIT_WORD.containsMatchIn(text) -> ReminderKind.AI_LIMIT
+        BIRTHDAY_WORD.containsMatchIn(text) -> ReminderKind.BIRTHDAY
+        MEDICINE_WORD.containsMatchIn(text) && !SHOPPING_WORD.containsMatchIn(text) -> ReminderKind.MEDICINE
         EXAM_WORD.containsMatchIn(text) -> ReminderKind.EXAM
+        EXPIRY_WORD.containsMatchIn(text) -> ReminderKind.EXPIRY
         BILL_WORD.containsMatchIn(text) -> ReminderKind.BILL
         DEADLINE_WORD.containsMatchIn(text) && !recurring -> ReminderKind.DEADLINE
         recurring -> ReminderKind.HABIT
@@ -185,7 +210,7 @@ object ReminderTextParser {
         nowMillis: Long = System.currentTimeMillis(),
         timeZone: TimeZone = TimeZone.getDefault()
     ): ParsedReminder {
-        val original = input.trim()
+        val original = HinglishNormalizer.normalize(input).trim()
         if (original.isEmpty()) return ParsedReminder(title = "", triggerAtMillis = null)
 
         var text = " " + original.replace(Regex("\\s+"), " ") + " "
@@ -221,10 +246,16 @@ object ReminderTextParser {
         var recurrenceRule: RecurrenceRule? = null
         var recurrenceMinutes: Int? = null
         var recurringImpliedHour: Int? = null
-        consume(EVERY_INTERVAL)?.let { m ->
-            val n = if (m.groupValues[1].isEmpty()) 1.0 else amount(m.groupValues[1])
-            val unit = m.groupValues[2].ifEmpty { "h" }
-            recurrenceMinutes = (n * unitMillis(unit) / MINUTE).toInt().coerceAtLeast(1)
+        var namedWeekday = false
+        consume(EVERY_N_DAYS)?.let { m ->
+            recurrenceMinutes = (amount(m.groupValues[1]) * unitMillis(m.groupValues[2]) / MINUTE).toInt()
+        }
+        if (recurrenceMinutes == null) {
+            consume(EVERY_INTERVAL)?.let { m ->
+                val n = if (m.groupValues[1].isEmpty()) 1.0 else amount(m.groupValues[1])
+                val unit = m.groupValues[2].ifEmpty { "h" }
+                recurrenceMinutes = (n * unitMillis(unit) / MINUTE).toInt().coerceAtLeast(1)
+            }
         }
         if (recurrenceMinutes == null) {
             when {
@@ -243,14 +274,22 @@ object ReminderTextParser {
                     val m = EVERY_NAMED_DAY.find(text)!!
                     text = text.replaceRange(m.range, " on ")
                     recurrenceRule = RecurrenceRule.WEEKLY
+                    namedWeekday = true
                 }
                 consume(EVERY_WEEK) != null -> recurrenceRule = RecurrenceRule.WEEKLY
                 consume(EVERY_MONTH) != null -> recurrenceRule = RecurrenceRule.MONTHLY
                 consume(EVERY_YEAR) != null -> recurrenceRule = RecurrenceRule.YEARLY
             }
         }
+        // "call mom every week" means a week after the last call, not a fixed day on the calendar.
+        if (recurrenceRule == RecurrenceRule.WEEKLY && !namedWeekday && STAY_IN_TOUCH_WORD.containsMatchIn(kindSource)) {
+            recurrenceRule = null
+            recurrenceMinutes = 7 * 24 * 60
+        }
         val recurring = recurrenceRule != null || recurrenceMinutes != null
         val kind = inferKind(kindSource, recurring)
+        // Nobody should have to say "every year" about a birthday.
+        if (kind == ReminderKind.BIRTHDAY && !recurring) recurrenceRule = RecurrenceRule.YEARLY
         val leads = customLeads?.let { list -> list.filter { it > 0 }.distinct().sortedDescending() } ?: kind.defaultLeadMinutes
 
         fun result(title: String, trigger: Long?) = ParsedReminder(
@@ -286,6 +325,7 @@ object ReminderTextParser {
         // ---- day -------------------------------------------------------------------------------
         var dayOffset: Int? = null
         var absoluteDate: Triple<Int, Int, Boolean>? = null // month(0-11), day, yearExplicitlyRollable
+        var explicitYear: Int? = null
         var weekday: Pair<Int, Boolean>? = null // calendar weekday, "next"
         var impliedHour: Int? = recurringImpliedHour
         var dayOfMonth: Int? = null
@@ -311,15 +351,23 @@ object ReminderTextParser {
         }
 
         if (dayOffset == null && weekday == null) {
+            fun numeric(first: Int, second: Int) {
+                // Day first, unless that cannot be a month ("3/25" can only be 25 March).
+                val (day, month) = if (second > 12 && first <= 12) second to first else first to second
+                if (month in 1..12 && day in 1..31) absoluteDate = Triple(month - 1, day, true)
+            }
             consume(MONTH_DAY)?.let { m ->
                 absoluteDate = Triple(monthIndex(m.groupValues[1]), m.groupValues[2].toInt(), true)
+                explicitYear = m.groupValues[3].toIntOrNull()
             } ?: consume(DAY_MONTH)?.let { m ->
                 absoluteDate = Triple(monthIndex(m.groupValues[2]), m.groupValues[1].toInt(), true)
+                explicitYear = m.groupValues[3].toIntOrNull()
+            } ?: consume(NUMERIC_DATE_YEAR)?.let { m ->
+                numeric(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+                val year = m.groupValues[3].toInt()
+                explicitYear = if (year < 100) 2000 + year else year
             } ?: consume(NUMERIC_DATE)?.let { m ->
-                // Month/day, the US order the app's English UI uses.
-                val month = m.groupValues[1].toInt() - 1
-                val day = m.groupValues[2].toInt()
-                if (month in 0..11 && day in 1..31) absoluteDate = Triple(month, day, true)
+                numeric(m.groupValues[1].toInt(), m.groupValues[2].toInt())
             }
         }
         if (dayOffset == null && weekday == null && absoluteDate == null) {
@@ -361,8 +409,9 @@ object ReminderTextParser {
             consume(TIME_BARE)?.let { m ->
                 val h = m.groupValues[1].toInt()
                 if (h in 0..23) {
-                    // Nobody sets a reminder "at 3" meaning 3 AM; 1-6 are afternoon/evening.
-                    hour = if (h in 1..6) h + 12 else h
+                    // Nobody sets a reminder "at 3" meaning 3 AM; 1-6 are afternoon/evening,
+                    // unless the sentence already said morning ("every morning at 6").
+                    hour = if (h in 1..6 && (impliedHour ?: 12) >= 12) h + 12 else h
                 }
             }
         }
@@ -381,7 +430,7 @@ object ReminderTextParser {
         }
         if (hour == null) {
             hour = impliedHour
-        } else if (impliedHour != null && hour!! < 12) {
+        } else if ((impliedHour ?: 0) >= 12 && hour!! < 12) {
             hour = hour!! + 12 // "tonight at 9"
         }
 
@@ -419,6 +468,7 @@ object ReminderTextParser {
             absoluteDate != null -> {
                 val (month, day, _) = absoluteDate!!
                 cal.set(Calendar.DAY_OF_MONTH, 1) // so Jan 31 -> "feb 3" doesn't roll into March
+                explicitYear?.let { cal.set(Calendar.YEAR, it) }
                 cal.set(Calendar.MONTH, month)
                 applyClock()
                 fun placeDay() = cal.set(
@@ -426,7 +476,7 @@ object ReminderTextParser {
                     day.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
                 )
                 placeDay()
-                if (cal.timeInMillis <= nowMillis) {
+                if (explicitYear == null && cal.timeInMillis <= nowMillis) {
                     cal.set(Calendar.DAY_OF_MONTH, 1)
                     cal.add(Calendar.YEAR, 1)
                     placeDay()
@@ -486,6 +536,7 @@ object ReminderTextParser {
         "four" -> 4.0
         "five" -> 5.0
         "six" -> 6.0
+        "seven" -> 7.0
         "ten" -> 10.0
         "fifteen" -> 15.0
         "twenty" -> 20.0

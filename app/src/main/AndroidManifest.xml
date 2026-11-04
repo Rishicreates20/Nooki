@@ -2,12 +2,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Milestone 1: Exact Alarm Scheduling, Boot Recovery, and Notification Delivery -->
+    <!-- Nooki's promise: nothing leaves the phone. This strips the permission even if a library
+         asks for it, and CI fails the build if it ever appears in the APK. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+
+    <queries>
+        <!-- Lets the voice button find a speech recogniser, and label apps Nooki noticed. -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -24,14 +40,34 @@
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.MyApplication">
+            android:theme="@style/Theme.MyApplication"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Share anything to Nooki from any app. -->
+            <intent-filter android:label="@string/shortcut_tell_nooki">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Select text anywhere and choose Nooki from the menu. -->
+            <intent-filter android:label="@string/process_text_label">
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.example.nooki.action.CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Exact Alarm Trigger Receiver -->
+        <!-- Exact alarm trigger -->
         <receiver
             android:name=".scheduler.receiver.ReminderAlarmReceiver"
             android:enabled="true"
@@ -42,7 +78,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Notification & In-App Quick Action Receiver (Complete / Snooze / Dismiss) -->
+        <!-- Notification actions: Done, later, swipe away, move to tomorrow -->
         <receiver
             android:name=".scheduler.receiver.ReminderActionReceiver"
             android:enabled="true"
@@ -51,23 +87,69 @@
                 <action android:name="com.example.nooki.ACTION_COMPLETE_REMINDER" />
                 <action android:name="com.example.nooki.ACTION_SNOOZE_REMINDER" />
                 <action android:name="com.example.nooki.ACTION_DISMISS_REMINDER" />
+                <action android:name="com.example.nooki.ACTION_MOVE_TO_TOMORROW" />
             </intent-filter>
         </receiver>
 
-        <!-- Boot, Package Replace, Time Change & Exact Alarm Permission Recovery Receiver -->
+        <!-- Morning brief and evening wrap -->
+        <receiver
+            android:name=".scheduler.receiver.DailyRhythmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.nooki.ACTION_MORNING_BRIEF" />
+                <action android:name="com.example.nooki.ACTION_EVENING_WRAP" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Restores alarms after reboot, update, time change and exact alarm permission change -->
         <receiver
             android:name=".scheduler.receiver.BootCompletedReceiver"
-            android:directBootAware="true"
             android:enabled="true"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
+        </receiver>
+
+        <!-- Reads notifications on the phone, only after the person turns it on -->
+        <service
+            android:name=".notice.NookiNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Quick settings tile -->
+        <service
+            android:name=".capture.NookiCaptureTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_knot"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home-screen widget -->
+        <receiver
+            android:name=".widget.NookiWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nooki_widget_info" />
         </receiver>
 
     </application>

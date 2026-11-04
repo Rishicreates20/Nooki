@@ -8,6 +8,7 @@ import com.example.data.local.database.NookiDatabase
 import com.example.data.local.entity.RecurrenceRule
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderKind
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -26,7 +27,7 @@ import org.robolectric.annotation.Config
 class NookiDatabaseMigrationTest {
 
     @Test
-    fun `version 1 reminders survive the upgrade as plain tasks`() {
+    fun `version 1 reminders survive the upgrade to the current schema`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "migration-test.db"
         context.deleteDatabase(name)
@@ -51,7 +52,7 @@ class NookiDatabaseMigrationTest {
         }
 
         val room = Room.databaseBuilder(context, NookiDatabase::class.java, name)
-            .addMigrations(NookiDatabase.MIGRATION_1_2)
+            .addMigrations(*NookiDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
         try {
@@ -59,6 +60,9 @@ class NookiDatabaseMigrationTest {
                 val dao = room.reminderDao()
                 val old = dao.getReminderById(7)!!
                 assertEquals("Old reminder", old.title)
+                assertEquals(false, old.undated)
+                assertEquals(false, old.keepAsking)
+                assertEquals(com.example.data.local.entity.ReminderSource.TYPED, old.source)
                 assertEquals(ReminderKind.TASK, old.kind)
                 assertEquals("", old.leadTimes)
                 assertNull(old.recurrenceRule)
@@ -76,6 +80,12 @@ class NookiDatabaseMigrationTest {
                 assertEquals(ReminderKind.BILL, rent.kind)
                 assertEquals("4320,1440", rent.leadTimes)
                 assertEquals(RecurrenceRule.MONTHLY, rent.recurrenceRule)
+
+                // The tables added in version 3 are open for use.
+                val attention = room.attentionDao()
+                attention.upsertMemory(com.example.data.local.entity.MemoryEntity(text = "Keys in the drawer"))
+                assertEquals(1, attention.observeMemories().first().size)
+                assertEquals(0, attention.observeNewNoticed().first().size)
             }
         } finally {
             room.close()

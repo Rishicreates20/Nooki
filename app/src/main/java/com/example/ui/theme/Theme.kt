@@ -2,57 +2,90 @@ package com.example.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
-private val NookiDarkColorScheme = darkColorScheme(
-    primary = NookiAmberLight,
-    onPrimary = NookiDeepInk,
-    primaryContainer = Color(0xFF452708),
-    onPrimaryContainer = Color(0xFFFDE68A),
-    secondary = NookiSkyInfo,
-    onSecondary = NookiDeepInk,
-    secondaryContainer = Color(0xFF0C4A6E),
-    onSecondaryContainer = Color(0xFFE0F2FE),
-    tertiary = NookiCoralAccent,
-    onTertiary = NookiDeepInk,
-    background = NookiDarkBackground,
-    onBackground = NookiCreamText,
-    surface = NookiDarkSurface,
-    onSurface = NookiCreamText,
-    surfaceVariant = NookiDarkSurfaceVariant,
-    onSurfaceVariant = NookiMutedLavender
+private val NookiDark = darkColorScheme(
+    primary = Marigold,
+    onPrimary = Neel,
+    primaryContainer = Marigold,
+    onPrimaryContainer = Neel,
+    secondary = IndigoBright,
+    onSecondary = NeelNight,
+    secondaryContainer = NeelRaised,
+    onSecondaryContainer = Cotton,
+    tertiary = LeafBright,
+    onTertiary = NeelNight,
+    error = SindoorBright,
+    onError = NeelNight,
+    background = NeelNight,
+    onBackground = Cotton,
+    surface = NeelNight,
+    onSurface = Cotton,
+    surfaceVariant = NeelRaised,
+    onSurfaceVariant = DarkNookiColors.muted,
+    surfaceContainerLow = NeelRaised,
+    surfaceContainer = NeelRaised,
+    surfaceContainerHigh = NeelRaised,
+    surfaceContainerHighest = NeelLine,
+    outline = NeelLine,
+    outlineVariant = NeelLine,
+    scrim = Color(0xCC090B22)
 )
 
-private val NookiLightColorScheme = lightColorScheme(
-    primary = NookiAmberPrimary,
-    onPrimary = Color.White,
-    primaryContainer = NookiLightSurfaceVariant,
-    onPrimaryContainer = NookiDeepInk,
-    secondary = Color(0xFF0284C7),
+private val NookiLight = lightColorScheme(
+    primary = Marigold,
+    onPrimary = Neel,
+    primaryContainer = Marigold,
+    onPrimaryContainer = Neel,
+    secondary = IndigoThread,
     onSecondary = Color.White,
-    tertiary = Color(0xFFE11D48),
-    background = NookiLightBackground,
-    onBackground = NookiDeepInk,
-    surface = NookiLightSurface,
-    onSurface = NookiDeepInk,
-    surfaceVariant = Color(0xFFF3E8FF),
-    onSurfaceVariant = Color(0xFF4C1D95)
+    secondaryContainer = CottonRaised,
+    onSecondaryContainer = Neel,
+    tertiary = Leaf,
+    onTertiary = Color.White,
+    error = Sindoor,
+    onError = Color.White,
+    background = Cotton,
+    onBackground = Neel,
+    surface = Cotton,
+    onSurface = Neel,
+    surfaceVariant = CottonRaised,
+    onSurfaceVariant = LightNookiColors.muted,
+    surfaceContainerLow = CottonRaised,
+    surfaceContainer = CottonRaised,
+    surfaceContainerHigh = CottonRaised,
+    surfaceContainerHighest = CottonLine,
+    outline = Color(0xFFB9BDD9),
+    outlineVariant = CottonLine,
+    scrim = Color(0x991C2254)
+)
+
+private val NookiShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
-fun MyApplicationTheme(
+fun NookiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Default to cozy twilight dark desk theme for Nooki
-    val colorScheme = if (darkTheme) NookiDarkColorScheme else NookiDarkColorScheme
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalNookiColors provides if (darkTheme) DarkNookiColors else LightNookiColors) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) NookiDark else NookiLight,
+            typography = Typography,
+            shapes = NookiShapes,
+            content = content
+        )
+    }
 }

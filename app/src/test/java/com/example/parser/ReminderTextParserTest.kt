@@ -84,7 +84,7 @@ class ReminderTextParserTest {
         assertEquals(at(2026, Calendar.DECEMBER, 25, 9, 0), parse("buy gifts dec 25").triggerAtMillis)
         assertEquals(at(2027, Calendar.MARCH, 3, 10, 0), parse("renew passport 3rd march at 10am").triggerAtMillis)
         assertEquals("Renew passport", parse("renew passport 3rd march at 10am").title)
-        assertEquals(at(2027, Calendar.JANUARY, 2, 9, 0), parse("taxes on 1/2").triggerAtMillis)
+        assertEquals(at(2027, Calendar.FEBRUARY, 1, 9, 0), parse("taxes on 1/2").triggerAtMillis)
         assertEquals(at(2028, Calendar.FEBRUARY, 29, 9, 0), parse("leap party feb 29").triggerAtMillis)
     }
 

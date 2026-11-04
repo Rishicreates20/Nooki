@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.nookipet.r8k2m"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -128,7 +128,20 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all {
+        // Screenshot tests only run when asked for: ./gradlew testDebugUnitTest -Pscreenshots
+        it.systemProperty("roborazzi.test.record", "true")
+        it.systemProperty("roborazzi.record.filePathStrategy", "relativePathFromCurrentDirectory")
+      }
+    }
+  }
+  // Keeping the screenshot tests and their tools apart means a problem there can never block an APK.
+  if (project.hasProperty("screenshots")) {
+    sourceSets.getByName("test").java.srcDir("src/screenshots/java")
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -144,6 +157,9 @@ secrets {
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
+
+// Room writes each schema version here, so every migration can be checked against what shipped.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
@@ -163,7 +179,8 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
-  // implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.glance.appwidget)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -195,6 +212,10 @@ dependencies {
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
+  if (project.hasProperty("screenshots")) {
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+  }
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)

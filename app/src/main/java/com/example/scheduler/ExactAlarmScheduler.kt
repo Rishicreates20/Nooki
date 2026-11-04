@@ -9,6 +9,8 @@ import android.provider.Settings
 import androidx.core.net.toUri
 import com.example.MainActivity
 import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderKind
+import com.example.data.local.entity.ReminderPriority
 import com.example.scheduler.receiver.ReminderAlarmReceiver
 import com.example.workflow.LeadAlert
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +36,9 @@ sealed class ScheduleResult {
         val triggerAtMillis: Long,
         val reason: String = "Exact alarm permission not granted; used setAndAllowWhileIdle"
     ) : ScheduleResult()
+
+    /** It has no time, so there is nothing to schedule. It waits on the list instead. */
+    data class NoAlarmNeeded(val reminderId: Long) : ScheduleResult()
 
     data class Failed(
         val reminderId: Long,
@@ -111,6 +116,7 @@ class AndroidExactAlarmScheduler(
     }
 
     override fun scheduleExact(reminder: ReminderEntity): ScheduleResult {
+        if (reminder.undated) return ScheduleResult.NoAlarmNeeded(reminder.id)
         val manager = alarmManager ?: return ScheduleResult.Failed(
             reminderId = reminder.id,
             errorMessage = "AlarmManager service unavailable on this device."
@@ -130,9 +136,12 @@ class AndroidExactAlarmScheduler(
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                // Use setAlarmClock for highest reliability & Doze wake-up on desk-pet reminders
-                val clockInfo = AlarmManager.AlarmClockInfo(safeTriggerMillis, showIntent)
-                manager.setAlarmClock(clockInfo, pendingIntent)
+                // Only something that must not be late earns the status-bar alarm icon.
+                if (reminder.needsAlarmClock) {
+                    manager.setAlarmClock(AlarmManager.AlarmClockInfo(safeTriggerMillis, showIntent), pendingIntent)
+                } else {
+                    manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, safeTriggerMillis, pendingIntent)
+                }
 
                 NookiSchedulerTelemetry.record(
                     source = "ExactAlarmScheduler",
@@ -278,6 +287,9 @@ class AndroidExactAlarmScheduler(
         )
     }
 
+    private val ReminderEntity.needsAlarmClock: Boolean
+        get() = keepAsking || priority == ReminderPriority.URGENT || kind == ReminderKind.MEDICINE
+
     private fun formatTime(millis: Long): String =
         SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()).format(Date(millis))
 
@@ -287,10 +299,12 @@ class AndroidExactAlarmScheduler(
         const val ACTION_COMPLETE_REMINDER = "com.example.nooki.ACTION_COMPLETE_REMINDER"
         const val ACTION_SNOOZE_REMINDER = "com.example.nooki.ACTION_SNOOZE_REMINDER"
         const val ACTION_DISMISS_REMINDER = "com.example.nooki.ACTION_DISMISS_REMINDER"
+        const val ACTION_MOVE_TO_TOMORROW = "com.example.nooki.ACTION_MOVE_TO_TOMORROW"
 
         const val EXTRA_REMINDER_ID = "extra_reminder_id"
         const val EXTRA_REMINDER_TITLE = "extra_reminder_title"
         const val EXTRA_REMINDER_CATEGORY = "extra_reminder_category"
         const val EXTRA_SNOOZE_MINUTES = "extra_snooze_minutes"
+        const val EXTRA_SNOOZE_TOMORROW = "extra_snooze_tomorrow"
     }
 }

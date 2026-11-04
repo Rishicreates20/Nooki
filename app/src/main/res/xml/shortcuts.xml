@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_tile_knot"
+        android:shortcutId="tell_nooki"
+        android:shortcutShortLabel="@string/shortcut_tell_nooki">
+        <intent
+            android:action="com.example.nooki.action.CAPTURE"
+            android:targetClass="com.example.MainActivity"
+            android:targetPackage="com.aistudio.nookipet.r8k2m" />
+    </shortcut>
+</shortcuts>
