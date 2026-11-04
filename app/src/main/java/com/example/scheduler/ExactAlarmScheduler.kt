@@ -8,7 +8,10 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.net.toUri
 import com.example.MainActivity
+import com.example.core.alarm.AlarmPolicy
+import com.example.core.alarm.AlarmPrecision
 import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderPriority
 import com.example.scheduler.receiver.ReminderAlarmReceiver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +31,13 @@ sealed class ScheduleResult {
         val mode: String = "setAlarmClock / setExactAndAllowWhileIdle"
     ) : ScheduleResult()
 
+    /** Normal reminders: inexact by design, so the phone can batch wake-ups. */
+    data class InexactScheduled(
+        val reminderId: Long,
+        val triggerAtMillis: Long
+    ) : ScheduleResult()
+
+    /** A critical reminder that had to be scheduled inexactly because exact alarms are not allowed. */
     data class InexactFallbackScheduled(
         val reminderId: Long,
         val triggerAtMillis: Long,
@@ -113,8 +123,14 @@ class AndroidExactAlarmScheduler(
         val pendingIntent = createTriggerPendingIntent(reminder)
         val safeTriggerMillis = reminder.triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
 
+        val precision = AlarmPolicy.precisionFor(
+            isCritical = reminder.priority == ReminderPriority.URGENT,
+            isMedicine = false, // Medicine reminders arrive with the new data model.
+            exactAllowed = canScheduleExactAlarms()
+        )
+
         return try {
-            if (canScheduleExactAlarms()) {
+            if (precision == AlarmPrecision.EXACT) {
                 val showIntent = PendingIntent.getActivity(
                     context,
                     reminder.id.toInt(),
@@ -124,7 +140,7 @@ class AndroidExactAlarmScheduler(
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                // Use setAlarmClock for highest reliability & Doze wake-up on desk-pet reminders
+                // Medicine and critical items: a late alarm causes harm, so pierce Doze.
                 val clockInfo = AlarmManager.AlarmClockInfo(safeTriggerMillis, showIntent)
                 manager.setAlarmClock(clockInfo, pendingIntent)
 
@@ -137,20 +153,33 @@ class AndroidExactAlarmScheduler(
                     triggerAtMillis = safeTriggerMillis
                 )
             } else {
+                // Everything else: an inexact alarm the phone can batch. Still fires in Doze.
                 manager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerMillis,
                     pendingIntent
                 )
+                val needsPermission = precision == AlarmPrecision.INEXACT_UNTIL_ALLOWED
                 NookiSchedulerTelemetry.record(
                     source = "ExactAlarmScheduler",
-                    message = "Scheduled INEXACT fallback #${reminder.id} ('${reminder.title}') - SCHEDULE_EXACT_ALARM not granted",
-                    isWarning = true
+                    message = if (needsPermission) {
+                        "Scheduled critical #${reminder.id} ('${reminder.title}') inexactly - exact alarms not allowed yet"
+                    } else {
+                        "Scheduled inexact alarm #${reminder.id} ('${reminder.title}') for ${formatTime(safeTriggerMillis)}"
+                    },
+                    isWarning = needsPermission
                 )
-                ScheduleResult.InexactFallbackScheduled(
-                    reminderId = reminder.id,
-                    triggerAtMillis = safeTriggerMillis
-                )
+                if (needsPermission) {
+                    ScheduleResult.InexactFallbackScheduled(
+                        reminderId = reminder.id,
+                        triggerAtMillis = safeTriggerMillis
+                    )
+                } else {
+                    ScheduleResult.InexactScheduled(
+                        reminderId = reminder.id,
+                        triggerAtMillis = safeTriggerMillis
+                    )
+                }
             }
         } catch (se: SecurityException) {
             // Fallback in case permission state changed mid-call

@@ -16,7 +16,7 @@ import com.example.data.local.entity.ReminderEntity
 @Database(
     entities = [ReminderEntity::class],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(ReminderTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -36,7 +36,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    // No destructive fallback: user data is never wiped. Every version bump must
+                    // ship a Migration (plus a migration test), or Room fails loudly instead.
                     .build()
                     .also { INSTANCE = it }
             }

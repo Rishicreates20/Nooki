@@ -200,10 +200,11 @@ class DeskPetViewModel(
                         )
                     }
                     val message = when (result) {
-                        is ScheduleResult.ExactScheduled ->
-                            "Scheduled exact alarm '${entity.title}'"
+                        is ScheduleResult.ExactScheduled,
+                        is ScheduleResult.InexactScheduled ->
+                            "Saved '${entity.title}'"
                         is ScheduleResult.InexactFallbackScheduled ->
-                            "Scheduled '${entity.title}' (fallback mode)"
+                            "Saved '${entity.title}'. Allow exact alarms so critical reminders ring on the minute."
                         is ScheduleResult.Failed ->
                             "Saved to Room; alarm warning: ${result.errorMessage}"
                     }

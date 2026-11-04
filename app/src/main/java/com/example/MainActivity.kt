@@ -378,10 +378,13 @@ private fun Centered3DDeskPetStage(
                 }
             }
 
-            if (!hasNotificationPermission || !uiState.canScheduleExactAlarms) {
+            // Ask for exact alarms only when a critical reminder actually needs one.
+            val criticalNeedsExact = !uiState.canScheduleExactAlarms &&
+                uiState.activeReminders.any { it.priority == ReminderPriority.URGENT }
+            if (!hasNotificationPermission || criticalNeedsExact) {
                 PermissionStatusBanner(
                     hasNotificationPermission = hasNotificationPermission,
-                    canScheduleExact = uiState.canScheduleExactAlarms,
+                    canScheduleExact = !criticalNeedsExact,
                     onRequestNotificationPermission = onRequestNotificationPermission,
                     onOpenExactAlarmSettings = onOpenExactAlarmSettings
                 )
@@ -866,7 +869,11 @@ private fun PermissionStatusBanner(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Enable alarm permissions",
+                    text = if (!hasNotificationPermission) {
+                        "Allow alerts so Nooki can remind you"
+                    } else {
+                        "Critical reminders need exact alarms to ring on the minute"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -876,14 +883,14 @@ private fun PermissionStatusBanner(
                     onClick = onRequestNotificationPermission,
                     modifier = Modifier.testTag("grant_notifications_button")
                 ) {
-                    Text("Allow Alerts")
+                    Text("Allow alerts")
                 }
             } else if (!canScheduleExact) {
                 OutlinedButton(
                     onClick = onOpenExactAlarmSettings,
                     modifier = Modifier.testTag("exact_alarm_settings_button")
                 ) {
-                    Text("Exact Alarms")
+                    Text("Allow exact alarms")
                 }
             }
         }
