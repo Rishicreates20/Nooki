@@ -206,10 +206,11 @@ dependencies {
 // The main manifest strips INTERNET even if a library asks for it (tools:node="remove"), and this
 // check fails the build if the merged manifest of any app variant still declares it.
 // -------------------------------------------------------------------------------------------------
-val forbiddenPermissions = listOf("android.permission.INTERNET")
 tasks
   .matching { it.name.matches(Regex("process(Debug|Release)MainManifest")) }
   .configureEach {
+    // Locals only: the doLast lambda must not capture script objects (configuration cache).
+    val forbiddenPermissions = listOf("android.permission.INTERNET")
     val mergedManifests = outputs.files
     val taskName = name
     doLast {
