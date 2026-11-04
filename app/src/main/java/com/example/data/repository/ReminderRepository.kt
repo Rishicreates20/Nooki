@@ -11,6 +11,7 @@ import com.example.data.local.entity.ReminderStatus
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.ScheduleResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.withLock
 import java.util.Calendar
 
 /**
@@ -72,6 +73,12 @@ interface ReminderRepository {
 /** Medicine asks again this many times before it stays in "You missed". */
 const val MEDICINE_MAX_ASKS = 3
 const val MEDICINE_ASK_AGAIN_MILLIS = 10 * 60_000L
+
+/**
+ * One lock for every repository instance (each receiver builds its own), so two quick "Done"
+ * taps or a tap racing a swipe can never both continue a repeating chain.
+ */
+private val chainLock = kotlinx.coroutines.sync.Mutex()
 
 class ReminderRepositoryImpl(
     private val reminderDao: ReminderDao,
@@ -161,8 +168,13 @@ class ReminderRepositoryImpl(
             cal.set(Calendar.SECOND, 0)
             cal.set(Calendar.MILLISECOND, 0)
             alarmScheduler.cancel(id)
+            // A missed repeating item already continued its chain when it was missed, so the
+            // moved copy is a one-off. Otherwise finishing it would start a second chain.
+            val chainContinued = existing.status == ReminderStatus.MISSED
             val moved = existing.copy(
                 triggerAtMillis = cal.timeInMillis,
+                recurrenceRule = if (chainContinued) null else existing.recurrenceRule,
+                recurrenceMinutes = if (chainContinued) null else existing.recurrenceMinutes,
                 hasTime = true,
                 status = ReminderStatus.SCHEDULED,
                 missedAtMillis = null
@@ -172,9 +184,12 @@ class ReminderRepositoryImpl(
         }
     }
 
-    override suspend fun markMissed(id: Long, nowMillis: Long) {
-        val existing = reminderDao.getReminderById(id) ?: return
-        if (existing.status == ReminderStatus.COMPLETED || existing.status == ReminderStatus.CANCELLED) return
+    override suspend fun markMissed(id: Long, nowMillis: Long) = chainLock.withLock {
+        val existing = reminderDao.getReminderById(id) ?: return@withLock
+        if (existing.status == ReminderStatus.COMPLETED ||
+            existing.status == ReminderStatus.CANCELLED ||
+            existing.status == ReminderStatus.MISSED
+        ) return@withLock
         alarmScheduler.cancel(id)
         if (existing.kind.needsConfirmation && existing.confirmAttempts < MEDICINE_MAX_ASKS) {
             val again = existing.copy(
@@ -184,7 +199,7 @@ class ReminderRepositoryImpl(
             )
             reminderDao.updateReminder(again)
             alarmScheduler.scheduleExact(again)
-            return
+            return@withLock
         }
         reminderDao.updateReminder(existing.copy(status = ReminderStatus.MISSED, missedAtMillis = nowMillis))
         scheduleNextOccurrence(existing, nowMillis)
@@ -192,8 +207,14 @@ class ReminderRepositoryImpl(
 
     /** Repeating reminders survive being done or ignored: the chain always continues. */
     private suspend fun scheduleNextOccurrence(existing: ReminderEntity, nowMillis: Long) {
-        val rule = existing.recurrenceRule ?: return
-        val next = WorkflowSchedule.nextOccurrence(existing.triggerAtMillis, rule, nowMillis)
+        val rule = existing.recurrenceRule
+        val interval = existing.recurrenceMinutes?.takeIf { it > 0 }
+        val next = when {
+            rule != null -> WorkflowSchedule.nextOccurrence(existing.triggerAtMillis, rule, nowMillis)
+            // "every 2 hours": the next one is an interval after now, done or missed.
+            interval != null -> nowMillis + interval * 60_000L
+            else -> return
+        }
         val draft = existing.copy(
             id = 0L,
             triggerAtMillis = next,
@@ -217,8 +238,9 @@ class ReminderRepositoryImpl(
         return existing.copy(status = ReminderStatus.RINGING)
     }
 
-    override suspend fun completeReminder(id: Long): ReminderEntity? {
-        val existing = reminderDao.getReminderById(id) ?: return null
+    override suspend fun completeReminder(id: Long): ReminderEntity? = chainLock.withLock {
+        val existing = reminderDao.getReminderById(id) ?: return@withLock null
+        if (existing.status == ReminderStatus.COMPLETED) return@withLock existing
         alarmScheduler.cancel(id)
         val now = System.currentTimeMillis()
         reminderDao.updateStatus(
@@ -226,22 +248,9 @@ class ReminderRepositoryImpl(
             status = ReminderStatus.COMPLETED,
             completedAtMillis = now
         )
-        // If this reminder has a recurring desk interval, automatically schedule the next cycle
-        val recurrenceMins = existing.recurrenceMinutes
-        if (recurrenceMins != null && recurrenceMins > 0) {
-            val nextTrigger = now + recurrenceMins * 60_000L
-            createAndScheduleReminder(
-                title = existing.title,
-                notes = existing.notes,
-                rawInput = existing.rawInput,
-                triggerAtMillis = nextTrigger,
-                priority = existing.priority,
-                category = existing.category,
-                recurrenceMinutes = recurrenceMins
-            )
-        }
-        scheduleNextOccurrence(existing, now)
-        return existing.copy(status = ReminderStatus.COMPLETED, completedAtMillis = now)
+        // A missed repeating item already continued its chain when it was missed.
+        if (existing.status != ReminderStatus.MISSED) scheduleNextOccurrence(existing, now)
+        existing.copy(status = ReminderStatus.COMPLETED, completedAtMillis = now)
     }
 
     override suspend fun snoozeReminder(

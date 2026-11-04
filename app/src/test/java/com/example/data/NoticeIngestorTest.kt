@@ -115,6 +115,13 @@ class NoticeIngestorTest {
     }
 
     @Test
+    fun `opening a bill SMS does not settle the bill`() = runBlocking {
+        ingestor.ingest(sms("JIO", "Bill of Rs 299 due on 3 Dec"), NoticeSettings(), "bill")
+        ingestor.onOpened("bill")
+        assertEquals(NoticedStatus.SUGGESTED, db.noticedDao().getAll().single().status)
+    }
+
+    @Test
     fun `the raw notification key is never stored`() = runBlocking {
         ingestor.ingest(RawNotification("dialer", "missed_call", "Missed call from Mom", null, now), NoticeSettings(), "0|com.google.android.dialer|1|+919876543210|10123")
         assertFalse(everythingStored().contains("9876543210"))

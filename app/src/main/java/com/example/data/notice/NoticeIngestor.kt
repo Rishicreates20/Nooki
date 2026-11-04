@@ -54,6 +54,8 @@ class NoticeIngestor(private val dao: NoticedDao) {
      */
     suspend fun onOpened(notificationKey: String) {
         val item = dao.findOpenByKey(hash(notificationKey)) ?: return
+        // Reading a bill SMS does not pay the bill, so bills stay until the person acts.
+        if (item.type == NoticedType.BILL) return
         dao.setStatus(item.id, NoticedStatus.ACCEPTED.name)
     }
 

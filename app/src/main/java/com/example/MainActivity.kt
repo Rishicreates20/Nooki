@@ -63,7 +63,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         NotificationHelper.ensureChannelCreated(this)
         DailyRhythm.schedule(this)
-        handleIncomingText(intent)
+        // Only on a fresh start: after rotation the view model already holds the draft and any edits.
+        if (savedInstanceState == null) handleIncomingText(intent)
 
         setContent {
             NookiTheme {
@@ -183,7 +184,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingText(intent: Intent?) {
         if (intent?.action == ACTION_TELL) focusCapture.intValue++
         val text = when (intent?.action) {
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
             Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             else -> null
         }

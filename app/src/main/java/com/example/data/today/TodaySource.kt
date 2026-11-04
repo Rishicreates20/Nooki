@@ -53,10 +53,16 @@ fun NoticedItemEntity.toToday(): TodayNotice {
     val dueAt = if (dueDay != null && dueMonth != null) {
         Calendar.getInstance(TimeZone.getDefault()).apply {
             val now = timeInMillis
+            // Day 1 first, so a stray "31" can never roll the month forward.
+            set(Calendar.DAY_OF_MONTH, 1)
+            if (dueYear != null) set(Calendar.YEAR, dueYear)
             set(Calendar.MONTH, dueMonth - 1)
-            set(Calendar.DAY_OF_MONTH, dueDay)
             set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            if (dueYear != null) set(Calendar.YEAR, dueYear) else if (timeInMillis < now - 30L * 86_400_000L) add(Calendar.YEAR, 1)
+            set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, getActualMaximum(Calendar.DAY_OF_MONTH)))
+            if (dueYear == null && timeInMillis < now - 30L * 86_400_000L) {
+                add(Calendar.YEAR, 1)
+                set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
         }.timeInMillis
     } else {
         null
