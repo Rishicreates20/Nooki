@@ -17,6 +17,8 @@ import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderKind
+import com.example.workflow.WorkflowSchedule
 import com.example.scheduler.receiver.ReminderActionReceiver
 
 /**
@@ -26,6 +28,10 @@ import com.example.scheduler.receiver.ReminderActionReceiver
 object NotificationHelper {
 
     const val CHANNEL_ID_ALARMS = "nooki_desk_pet_alarms"
+    const val CHANNEL_ID_HEADS_UP = "nooki_heads_up"
+
+    /** Heads-ups use their own notification id so the real alarm later doesn't replace one silently. */
+    private const val HEADS_UP_ID_OFFSET = 400_000
 
     fun ensureChannelCreated(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -45,6 +51,61 @@ object NotificationHelper {
                 }
                 manager.createNotificationChannel(channel)
             }
+            if (manager.getNotificationChannel(CHANNEL_ID_HEADS_UP) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ID_HEADS_UP,
+                        context.getString(R.string.channel_heads_up_name),
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply {
+                        description = context.getString(R.string.channel_heads_up_description)
+                        setShowBadge(true)
+                    }
+                )
+            }
+        }
+    }
+
+    private fun canPost(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * A heads-up before an exam, deadline or bill ("Physics exam: 1 day left"). It is quieter than
+     * the alarm and carries no Done action, since the thing itself hasn't happened yet.
+     */
+    fun showLeadAlertNotification(context: Context, reminder: ReminderEntity, nowMillis: Long) {
+        ensureChannelCreated(context)
+        if (!canPost(context)) return
+        val left = WorkflowSchedule.countdown(reminder.triggerAtMillis, nowMillis)
+        val body = when (reminder.kind) {
+            ReminderKind.EXAM -> "Nooki packed your pencils. Time for a revision block?"
+            ReminderKind.DEADLINE -> "Nooki is guarding the deadline. A small push today keeps it calm."
+            ReminderKind.BILL -> "Pay it early and Nooki won't have to worry."
+            else -> "Coming up soon. Nooki is keeping an eye on it."
+        }
+        val openIntent = PendingIntent.getActivity(
+            context,
+            HEADS_UP_ID_OFFSET + reminder.id.toInt(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID_HEADS_UP)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("${reminder.kind.label}: ${reminder.title} · $left")
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .build()
+        runCatching {
+            NotificationManagerCompat.from(context).notify(HEADS_UP_ID_OFFSET + reminder.id.toInt(), notification)
         }
     }
 
@@ -100,7 +161,15 @@ object NotificationHelper {
         )
 
         val bodyText = buildString {
-            append("Nooki is tapping your desk! ")
+            append(
+                when (reminder.kind) {
+                    ReminderKind.AI_LIMIT -> "Good news: it's back! Nooki is ready to build with you. "
+                    ReminderKind.EXAM -> "Exam time. Nooki believes in you! "
+                    ReminderKind.DEADLINE -> "Deadline now! "
+                    ReminderKind.BILL -> "Due today. "
+                    else -> "Nooki is tapping your desk! "
+                }
+            )
             if (reminder.notes.isNotBlank()) {
                 append(reminder.notes)
             } else {
@@ -138,6 +207,7 @@ object NotificationHelper {
     fun cancelNotification(context: Context, reminderId: Long) {
         runCatching {
             NotificationManagerCompat.from(context).cancel(reminderId.toInt())
+            NotificationManagerCompat.from(context).cancel(HEADS_UP_ID_OFFSET + reminderId.toInt())
         }
     }
 

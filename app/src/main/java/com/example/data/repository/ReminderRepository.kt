@@ -1,12 +1,15 @@
 package com.example.data.repository
 
 import com.example.data.local.dao.ReminderDao
+import com.example.data.local.entity.RecurrenceRule
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderKind
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.ScheduleResult
+import com.example.workflow.WorkflowSchedule
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -36,8 +39,14 @@ interface ReminderRepository {
         triggerAtMillis: Long,
         priority: ReminderPriority = ReminderPriority.MEDIUM,
         category: ReminderCategory = ReminderCategory.DESK,
-        recurrenceMinutes: Int? = null
+        recurrenceMinutes: Int? = null,
+        kind: ReminderKind = ReminderKind.TASK,
+        leadMinutes: List<Int> = kind.defaultLeadMinutes,
+        recurrenceRule: RecurrenceRule? = null
     ): Pair<ReminderEntity, ScheduleResult>
+
+    /** Schedules the earliest heads-up still ahead of [nowMillis], if the reminder has any left. */
+    fun scheduleNextLeadAlert(reminder: ReminderEntity, nowMillis: Long = System.currentTimeMillis())
 
     suspend fun markRinging(id: Long): ReminderEntity?
     suspend fun completeReminder(id: Long): ReminderEntity?
@@ -73,7 +82,10 @@ class ReminderRepositoryImpl(
         triggerAtMillis: Long,
         priority: ReminderPriority,
         category: ReminderCategory,
-        recurrenceMinutes: Int?
+        recurrenceMinutes: Int?,
+        kind: ReminderKind,
+        leadMinutes: List<Int>,
+        recurrenceRule: RecurrenceRule?
     ): Pair<ReminderEntity, ScheduleResult> {
         val draft = ReminderEntity(
             title = title.trim(),
@@ -84,12 +96,25 @@ class ReminderRepositoryImpl(
             category = category,
             status = ReminderStatus.SCHEDULED,
             recurrenceMinutes = recurrenceMinutes,
-            petMoodImpact = priority.xpReward
+            petMoodImpact = priority.xpReward,
+            kind = kind,
+            leadTimes = WorkflowSchedule.encodeLeadTimes(leadMinutes),
+            recurrenceRule = recurrenceRule
         )
         val generatedId = reminderDao.upsertReminder(draft)
         val persisted = draft.copy(id = generatedId)
         val scheduleResult = alarmScheduler.scheduleExact(persisted)
+        scheduleNextLeadAlert(persisted)
         return persisted to scheduleResult
+    }
+
+    override fun scheduleNextLeadAlert(reminder: ReminderEntity, nowMillis: Long) {
+        val next = WorkflowSchedule.nextLeadAlert(
+            triggerAtMillis = reminder.triggerAtMillis,
+            leadMinutes = WorkflowSchedule.decodeLeadTimes(reminder.leadTimes),
+            nowMillis = nowMillis
+        )
+        if (next != null) alarmScheduler.scheduleLeadAlert(reminder, next) else alarmScheduler.cancelLeadAlert(reminder.id)
     }
 
     override suspend fun markRinging(id: Long): ReminderEntity? {
@@ -107,16 +132,23 @@ class ReminderRepositoryImpl(
         // tap may award XP and spawn the next recurring cycle.
         if (existing.status == ReminderStatus.COMPLETED) return existing
         alarmScheduler.cancel(id)
+        alarmScheduler.cancelLeadAlert(id)
         val now = System.currentTimeMillis()
         reminderDao.updateStatus(
             id = id,
             status = ReminderStatus.COMPLETED,
             completedAtMillis = now
         )
-        // If this reminder has a recurring desk interval, automatically schedule the next cycle
+        // Repeats: a calendar rule keeps its date pattern ("rent on the 1st" stays on the 1st), while
+        // a fixed interval ("every 2 hours") counts from when you tapped Done.
+        val rule = existing.recurrenceRule
         val recurrenceMins = existing.recurrenceMinutes
-        if (recurrenceMins != null && recurrenceMins > 0) {
-            val nextTrigger = now + recurrenceMins * 60_000L
+        val nextTrigger = when {
+            rule != null -> WorkflowSchedule.nextOccurrence(existing.triggerAtMillis, rule, now)
+            recurrenceMins != null && recurrenceMins > 0 -> now + recurrenceMins * 60_000L
+            else -> null
+        }
+        if (nextTrigger != null) {
             createAndScheduleReminder(
                 title = existing.title,
                 notes = existing.notes,
@@ -124,7 +156,10 @@ class ReminderRepositoryImpl(
                 triggerAtMillis = nextTrigger,
                 priority = existing.priority,
                 category = existing.category,
-                recurrenceMinutes = recurrenceMins
+                recurrenceMinutes = recurrenceMins,
+                kind = existing.kind,
+                leadMinutes = WorkflowSchedule.decodeLeadTimes(existing.leadTimes),
+                recurrenceRule = rule
             )
         }
         return existing.copy(status = ReminderStatus.COMPLETED, completedAtMillis = now)
@@ -136,6 +171,7 @@ class ReminderRepositoryImpl(
     ): Pair<ReminderEntity, ScheduleResult>? {
         val existing = reminderDao.getReminderById(id) ?: return null
         alarmScheduler.cancel(id)
+        alarmScheduler.cancelLeadAlert(id)
         val newTriggerAt = System.currentTimeMillis() + (snoozeMinutes.coerceAtLeast(1) * 60_000L)
         val newSnoozeCount = existing.snoozeCount + 1
         reminderDao.updateTriggerTimeAndStatus(
@@ -155,6 +191,7 @@ class ReminderRepositoryImpl(
 
     override suspend fun dismissReminder(id: Long) {
         alarmScheduler.cancel(id)
+        alarmScheduler.cancelLeadAlert(id)
         reminderDao.updateStatus(
             id = id,
             status = ReminderStatus.CANCELLED,
@@ -164,6 +201,7 @@ class ReminderRepositoryImpl(
 
     override suspend fun deleteReminder(id: Long) {
         alarmScheduler.cancel(id)
+        alarmScheduler.cancelLeadAlert(id)
         reminderDao.deleteReminderById(id)
     }
 
@@ -180,6 +218,7 @@ class ReminderRepositoryImpl(
             // Grace window of 15 seconds for alarms right around current time
             if (reminder.triggerAtMillis > nowMillis - 15_000L && reminder.status != ReminderStatus.RINGING) {
                 alarmScheduler.scheduleExact(reminder)
+                scheduleNextLeadAlert(reminder, nowMillis)
                 rescheduled++
             } else if (reminder.triggerAtMillis <= nowMillis - 15_000L && reminder.status != ReminderStatus.RINGING) {
                 reminderDao.updateStatus(

@@ -38,6 +38,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.nooki.ACTION_TRIGGER_REMINDER_ALARM" />
+                <action android:name="com.example.nooki.ACTION_LEAD_ALERT" />
             </intent-filter>
         </receiver>
 

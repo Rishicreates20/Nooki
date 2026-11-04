@@ -49,10 +49,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.example.data.local.entity.ReminderCategory
+import com.example.data.local.entity.ReminderKind
 import com.example.data.local.entity.ReminderPriority
 import com.example.parser.ParsedReminder
 import com.example.parser.PriorityHint
 import com.example.parser.ReminderTextParser
+import com.example.workflow.WorkflowSchedule
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -84,10 +86,12 @@ private val FALLBACK_TIMES = listOf(
 )
 
 private val EXAMPLES = listOf(
+    "Physics exam on Friday at 10am",
+    "Claude limit resets in 5h",
+    "Assignment due Monday 11:59pm",
+    "Pay rent on the 1st every month",
     "Call mom tomorrow at 6pm",
-    "Stretch in 45 mins",
-    "Submit report Friday at 3:15 PM",
-    "Drink water in 20 min"
+    "Drink water every 2 hours"
 )
 
 /**
@@ -251,8 +255,31 @@ private fun ParsePreview(parsed: ParsedReminder, nowMillis: Long, inPast: Boolea
                     )
                 }
             }
+            val workflow = workflowSummary(parsed, nowMillis)
+            if (workflow.isNotEmpty()) {
+                Text(
+                    workflow,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
         }
     }
+}
+
+/** "Exam · heads-ups 1 week, 1 day, 2 hours before · Every month", or "" for a plain task. */
+fun workflowSummary(parsed: ParsedReminder, nowMillis: Long): String {
+    val parts = mutableListOf<String>()
+    if (parsed.kind != ReminderKind.TASK) parts += parsed.kind.label
+    val trigger = parsed.triggerAtMillis
+    val leads = if (trigger == null) parsed.leadMinutes
+    else WorkflowSchedule.upcomingLeads(trigger, parsed.leadMinutes, nowMillis)
+    if (leads.isNotEmpty()) {
+        parts += "heads-ups " + leads.joinToString(", ") { WorkflowSchedule.describeLead(it) } + " before"
+    }
+    parsed.recurrenceRule?.let { parts += it.label }
+    parsed.recurrenceMinutes?.let { parts += "Every " + WorkflowSchedule.describeLead(it) }
+    return parts.joinToString(" · ")
 }
 
 /** "in 45 min", "today at 6:00 PM", "tomorrow at 9:00 AM", "Fri, Nov 6 at 3:15 PM". */
@@ -284,7 +311,7 @@ fun inferCategory(title: String): ReminderCategory {
     return when {
         has("water", "drink", "hydrat", "tea", "coffee", "sip") -> ReminderCategory.HYDRATION
         has("stretch", "walk", "posture", "exercise", "gym", "yoga", "break", "eyes") -> ReminderCategory.STRETCH
-        has("focus", "study", "code", "write", "deep work", "read", "revise", "exam") -> ReminderCategory.FOCUS
+        has("focus", "study", "code", "write", "deep work", "read", "revise", "exam", "assignment") -> ReminderCategory.FOCUS
         has("buy", "pick up", "groceries", "shop", "pay", "bank", "post", "collect", "call") -> ReminderCategory.ERRAND
         else -> ReminderCategory.DESK
     }

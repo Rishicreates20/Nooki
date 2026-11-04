@@ -14,4 +14,6 @@
     <string name="btn_fire_test_alarm">Fire Test Alarm Now</string>
     <string name="btn_simulate_boot">Simulate Boot Recovery</string>
     <string name="empty_reminders_tip">Nooki is resting peacefully on your desk. Add a reminder below to keep Nooki energized!</string>
+    <string name="channel_heads_up_name">Heads-ups before exams and deadlines</string>
+    <string name="channel_heads_up_description">Nooki\'s early reminders a week, a day or a few hours before exams, deadlines and bills.</string>
 </resources>
