@@ -3,15 +3,21 @@ package com.example.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.local.entity.PetJournalEntryEntity
+import com.example.data.local.entity.PetMilestoneType
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
+import com.example.data.local.entity.UserProfileEntity
 import com.example.data.repository.ReminderRepository
+import com.example.domain.model.ConsistencyStreakCalculator
 import com.example.domain.model.HappinessTier
+import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiStateMachine
 import com.example.domain.model.PetGestureType
+import com.example.domain.model.SensoryCue
 import com.example.domain.notice.NookiNoticeFilter
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
@@ -21,6 +27,7 @@ import com.example.domain.parser.NookiCaptureKind
 import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskSideEffect
 import com.example.presentation.mvi.DeskUiState
+import com.example.presentation.mvi.TaskBoardFilter
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
 import kotlinx.coroutines.channels.Channel
@@ -39,8 +46,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Reactive MVI ViewModel powered by Kotlin [StateFlow].
- * Manages Nooki's [com.example.domain.model.MoodState] from both Room reminder completion
- * frequency and interactive 3D touch gestures (`HEAD_PAT`, `PLAY_BOOP`, `BELLY_SCRITCH`).
+ * Manages Nooki's [com.example.domain.model.MoodState], [com.example.domain.model.ConsistencyStreakState],
+ * To-Do / Done task sections, [UserProfileEntity], [NookiAppTheme], and [PetJournalEntryEntity] milestones.
  */
 class DeskPetViewModel(
     private val repository: ReminderRepository,
@@ -50,6 +57,8 @@ class DeskPetViewModel(
     private data class EphemeralInteractionState(
         val nowMillis: Long = System.currentTimeMillis(),
         val breathInputText: String = "",
+        val selectedTaskFilter: TaskBoardFilter = TaskBoardFilter.TODO,
+        val selectedJournalFilter: PetMilestoneType? = null,
         val celebratingUntilMillis: Long = 0L,
         val celebrationSpeech: String? = null,
         val lastEarnedXp: Int = 0,
@@ -85,12 +94,18 @@ class DeskPetViewModel(
 
     private var lastLoggedMood: NookiPetMood? = null
     private var lastLoggedHappinessTier: HappinessTier? = null
+    private var lastSyncedStreakDays: Int = -1
+    private var lastSyncedLongestStreak: Int = -1
+    private var hasInitializedPersonalitySnapshot = false
+    private val recordedStreakMilestones = mutableSetOf<Int>()
 
     val uiState: StateFlow<DeskUiState> = combine(
         repository.allReminders.distinctUntilChanged(),
         repository.activeReminders.distinctUntilChanged(),
         repository.completedCount.distinctUntilChanged(),
         repository.totalEarnedXp.distinctUntilChanged(),
+        repository.userProfile.distinctUntilChanged(),
+        repository.journalEntries.distinctUntilChanged(),
         NookiSchedulerTelemetry.logs,
         ephemeralState
     ) { values ->
@@ -100,9 +115,12 @@ class DeskPetViewModel(
         val activeReminders = values[1] as List<ReminderEntity>
         val completedCount = values[2] as Int
         val dbXp = values[3] as Int
+        val profile = (values[4] as? UserProfileEntity) ?: UserProfileEntity()
         @Suppress("UNCHECKED_CAST")
-        val logs = values[4] as List<com.example.scheduler.SchedulerDiagnosticEntry>
-        val local = values[5] as EphemeralInteractionState
+        val journalEntries = values[5] as List<PetJournalEntryEntity>
+        @Suppress("UNCHECKED_CAST")
+        val logs = values[6] as List<com.example.scheduler.SchedulerDiagnosticEntry>
+        val local = values[7] as EphemeralInteractionState
 
         val now = local.nowMillis
         val ringing = allReminders.filter { it.status == ReminderStatus.RINGING }
@@ -146,7 +164,28 @@ class DeskPetViewModel(
                 item !in youForgotAndHeld
         }
 
-        val doneKnots = allReminders.filter { it.status == ReminderStatus.COMPLETED }
+        val doneKnots = allReminders
+            .filter { it.status == ReminderStatus.COMPLETED }
+            .sortedByDescending { it.completedAtMillis ?: it.createdAtMillis }
+
+        val todoTasks = allReminders
+            .filter { it.status != ReminderStatus.COMPLETED && it.status != ReminderStatus.CANCELLED }
+            .sortedWith(
+                compareBy<ReminderEntity> {
+                    when (it.status) {
+                        ReminderStatus.RINGING -> 0
+                        ReminderStatus.MISSED -> 1
+                        else -> 2
+                    }
+                }.thenBy { it.triggerAtMillis }
+            )
+
+        val consistencyStreak = ConsistencyStreakCalculator.compute(
+            allReminders = allReminders,
+            nowMillis = now,
+            persistedLongestStreak = profile.longestStreakDays,
+            dailyGoalCount = profile.dailyReminderGoal
+        )
 
         val machineOutput = NookiStateMachine.reduceWithMood(
             allReminders = allReminders,
@@ -161,7 +200,9 @@ class DeskPetViewModel(
             activePlayGesture = local.activePlayGesture
         )
         val resolvedPetState = machineOutput.petState
-        val resolvedMoodState = machineOutput.moodState
+        val resolvedMoodState = machineOutput.moodState.copy(
+            streakDays = consistencyStreak.currentStreakDays
+        )
 
         val liveParsed = NookiBreathParser.parse(
             rawInput = local.breathInputText,
@@ -173,12 +214,25 @@ class DeskPetViewModel(
         val level = (combinedXp / 50) + 1
         val xpInLevel = combinedXp % 50
 
+        val syncedProfile = profile.copy(
+            currentStreakDays = consistencyStreak.currentStreakDays,
+            longestStreakDays = consistencyStreak.longestStreakDays
+        )
+        val resolvedTheme = NookiAppTheme.fromId(syncedProfile.selectedThemeId)
+
         DeskUiState(
             petState = resolvedPetState,
             petMood = resolvedPetState.mood,
             moodState = resolvedMoodState,
+            consistencyStreak = consistencyStreak,
+            userProfile = syncedProfile,
+            selectedTheme = resolvedTheme,
+            journalEntries = journalEntries,
+            selectedJournalFilter = local.selectedJournalFilter,
+            isSoundEnabled = syncedProfile.soundEnabled,
+            isHapticsEnabled = syncedProfile.hapticsEnabled,
             speechBubbleText = resolvedPetState.speechText,
-            stateTransitionSummary = "${resolvedPetState.mood.stateCode} • ${resolvedMoodState.happinessTier.label} (${resolvedMoodState.happinessScore}%)",
+            stateTransitionSummary = "${resolvedPetState.mood.stateCode} • ${resolvedMoodState.happinessTier.label} (${resolvedMoodState.happinessScore}%) • 🔥 ${consistencyStreak.currentStreakDays}d Streak",
             level = level,
             totalXp = combinedXp,
             xpInCurrentLevel = xpInLevel,
@@ -191,6 +245,9 @@ class DeskPetViewModel(
             activeReminders = activeReminders,
             ringingReminders = ringing,
             overdueReminders = youMissed,
+            todoTasks = todoTasks,
+            doneTasks = doneKnots,
+            selectedTaskFilter = local.selectedTaskFilter,
             youMissedKnots = youMissed,
             youForgotAndHeldKnots = youForgotAndHeld,
             netMoneyOwedToYouInr = owedToYouTotal,
@@ -210,15 +267,58 @@ class DeskPetViewModel(
     }
         .onEach { state ->
             val moodChanged = lastLoggedMood != state.petMood
-            val tierChanged = lastLoggedHappinessTier != state.moodState.happinessTier
+            val prevTier = lastLoggedHappinessTier
+            val tierChanged = prevTier != state.moodState.happinessTier
             if (moodChanged || tierChanged) {
                 val prevMood = lastLoggedMood?.stateCode ?: "INIT"
                 lastLoggedMood = state.petMood
                 lastLoggedHappinessTier = state.moodState.happinessTier
                 NookiSchedulerTelemetry.record(
                     source = "MoodStateMachine",
-                    message = "State: $prevMood ➔ ${state.petMood.stateCode} | Happiness: ${state.moodState.happinessScore}% (${state.moodState.happinessTier.label}, ${state.moodState.completedLast24Hours}/24h)"
+                    message = "State: $prevMood ➔ ${state.petMood.stateCode} | Happiness: ${state.moodState.happinessScore}% | Streak: ${state.consistencyStreak.currentStreakDays}d"
                 )
+
+                // Record a Pet Personality Shift in the Milestone Journal when Nooki transitions tiers after initialization
+                if (hasInitializedPersonalitySnapshot && tierChanged && prevTier != null) {
+                    val newTier = state.moodState.happinessTier
+                    viewModelScope.launch {
+                        repository.recordJournalMilestone(
+                            milestoneType = PetMilestoneType.PERSONALITY_SHIFT,
+                            title = "Pet Personality Shift: ${newTier.label}",
+                            narrative = "Nooki shifted from ${prevTier.label} to ${newTier.label} (${state.moodState.happinessScore}% happiness) as your thread updated.",
+                            badgeEmoji = newTier.badgeEmoji,
+                            happinessSnapshot = state.moodState.happinessScore,
+                            streakSnapshot = state.consistencyStreak.currentStreakDays
+                        )
+                    }
+                }
+                hasInitializedPersonalitySnapshot = true
+            }
+            val currentStreak = state.consistencyStreak.currentStreakDays
+            val longestStreak = state.consistencyStreak.longestStreakDays
+            if (currentStreak != lastSyncedStreakDays || longestStreak != lastSyncedLongestStreak) {
+                val prevStreak = lastSyncedStreakDays
+                lastSyncedStreakDays = currentStreak
+                lastSyncedLongestStreak = longestStreak
+                val lastDayEpoch = state.doneTasks.firstOrNull()?.completedDayEpoch ?: 0L
+                viewModelScope.launch {
+                    repository.syncConsistencyStreakInProfile(
+                        currentStreakDays = currentStreak,
+                        longestStreakDays = longestStreak,
+                        lastCompletedDayEpoch = lastDayEpoch
+                    )
+                    if (prevStreak >= 0 && currentStreak >= 3 && currentStreak > prevStreak && currentStreak !in recordedStreakMilestones) {
+                        recordedStreakMilestones.add(currentStreak)
+                        repository.recordJournalMilestone(
+                            milestoneType = PetMilestoneType.FIRST_HIGH_STREAK,
+                            title = "High-Streak Achievement: ${currentStreak}-Day Thread!",
+                            narrative = "You maintained a ${currentStreak}-day consistency streak! Nooki's 3D aura and orbital particles are glowing at full strength.",
+                            badgeEmoji = "🔥",
+                            happinessSnapshot = state.moodState.happinessScore,
+                            streakSnapshot = currentStreak
+                        )
+                    }
+                }
             }
         }
         .stateIn(
@@ -253,8 +353,205 @@ class DeskPetViewModel(
                 ephemeralState.update { it.copy(isAutoRotate3DEnabled = !it.isAutoRotate3DEnabled) }
             }
 
+            is DeskIntent.SelectAppTheme -> {
+                viewModelScope.launch {
+                    val currentTheme = uiState.value.selectedTheme
+                    if (currentTheme == intent.theme) return@launch
+                    repository.selectAppTheme(intent.theme)
+                    val currentMood = uiState.value.moodState
+                    val currentStreak = uiState.value.consistencyStreak.currentStreakDays
+                    repository.recordJournalMilestone(
+                        milestoneType = PetMilestoneType.THEME_ATMOSPHERE,
+                        title = "Atmosphere Shift: ${intent.theme.displayName}",
+                        narrative = "Switched desk sanctuary to ${intent.theme.displayName} (${intent.theme.subtitle}). 3D particle colors attuned to the new palette!",
+                        badgeEmoji = intent.theme.badgeEmoji,
+                        happinessSnapshot = currentMood.happinessScore,
+                        streakSnapshot = currentStreak
+                    )
+                    ephemeralState.update {
+                        it.copy(
+                            celebratingUntilMillis = System.currentTimeMillis() + 3_000L,
+                            celebrationSpeech = "${intent.theme.badgeEmoji} Switched to ${intent.theme.displayName}! Look at my matching 3D particles!"
+                        )
+                    }
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage("Applied '${intent.theme.displayName}' theme & particle colors")
+                    )
+                }
+            }
+
+            is DeskIntent.SelectJournalFilter -> {
+                ephemeralState.update { it.copy(selectedJournalFilter = intent.milestoneType) }
+            }
+
+            is DeskIntent.AddCustomJournalNote -> {
+                val cleanTitle = intent.title.trim()
+                val cleanNarrative = intent.narrative.trim()
+                if (cleanTitle.isEmpty()) return
+                viewModelScope.launch {
+                    val state = uiState.value
+                    repository.recordJournalMilestone(
+                        milestoneType = intent.milestoneType,
+                        title = cleanTitle,
+                        narrative = cleanNarrative.ifEmpty {
+                            "Recorded with Nooki at ${state.moodState.happinessScore}% happiness and a ${state.consistencyStreak.currentStreakDays}-day streak."
+                        },
+                        badgeEmoji = intent.milestoneType.defaultBadgeEmoji,
+                        happinessSnapshot = state.moodState.happinessScore,
+                        streakSnapshot = state.consistencyStreak.currentStreakDays
+                    )
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage("Saved milestone to Nooki's Journal!")
+                    )
+                }
+            }
+
+            is DeskIntent.DeleteJournalEntry -> {
+                viewModelScope.launch {
+                    repository.deleteJournalEntry(intent.id)
+                }
+            }
+
+            DeskIntent.ToggleSoundEnabled -> {
+                viewModelScope.launch {
+                    val currentProfile = uiState.value.userProfile
+                    val nextSound = !currentProfile.soundEnabled
+                    repository.updateSensoryPreferences(
+                        soundEnabled = nextSound,
+                        hapticsEnabled = currentProfile.hapticsEnabled
+                    )
+                    if (nextSound) {
+                        _sideEffects.send(
+                            DeskSideEffect.PlaySensoryCue(
+                                cue = SensoryCue.KNOT_TIED,
+                                soundEnabled = true,
+                                hapticsEnabled = currentProfile.hapticsEnabled
+                            )
+                        )
+                    }
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage(
+                            if (nextSound) "Cozy sound effects enabled" else "Sound effects muted"
+                        )
+                    )
+                }
+            }
+
+            DeskIntent.ToggleHapticsEnabled -> {
+                viewModelScope.launch {
+                    val currentProfile = uiState.value.userProfile
+                    val nextHaptics = !currentProfile.hapticsEnabled
+                    repository.updateSensoryPreferences(
+                        soundEnabled = currentProfile.soundEnabled,
+                        hapticsEnabled = nextHaptics
+                    )
+                    if (nextHaptics) {
+                        _sideEffects.send(
+                            DeskSideEffect.PlaySensoryCue(
+                                cue = SensoryCue.PET_HEAD_PAT,
+                                soundEnabled = false,
+                                hapticsEnabled = true
+                            )
+                        )
+                    }
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage(
+                            if (nextHaptics) "Haptic waveform feedback enabled" else "Haptic feedback muted"
+                        )
+                    )
+                }
+            }
+
+            is DeskIntent.PreviewSensoryCue -> {
+                viewModelScope.launch {
+                    val current = uiState.value
+                    _sideEffects.send(
+                        DeskSideEffect.PlaySensoryCue(
+                            cue = intent.cue,
+                            soundEnabled = current.isSoundEnabled,
+                            hapticsEnabled = current.isHapticsEnabled
+                        )
+                    )
+                }
+            }
+
             is DeskIntent.UpdateBreathInput -> {
                 ephemeralState.update { it.copy(breathInputText = intent.text) }
+            }
+
+            is DeskIntent.SelectTaskBoardFilter -> {
+                ephemeralState.update { it.copy(selectedTaskFilter = intent.filter) }
+            }
+
+            is DeskIntent.QuickAddTodoTask -> {
+                val cleanTitle = intent.title.trim()
+                if (cleanTitle.isEmpty()) return
+                viewModelScope.launch {
+                    val now = System.currentTimeMillis()
+                    val parsed = NookiBreathParser.parse(
+                        rawInput = cleanTitle,
+                        nowMillis = now,
+                        existingItems = uiState.value.allReminders
+                    )
+                    val (entity, _) = if (cleanTitle.contains(" ") && parsed.timeExplanation != "Today (in 1 hour)") {
+                        repository.saveParsedBreathCapture(parsed)
+                    } else {
+                        repository.createAndScheduleReminder(
+                            title = cleanTitle,
+                            notes = "KIND:TODO_TASK | Added from To-Do Board",
+                            rawInput = cleanTitle,
+                            triggerAtMillis = now + 60 * 60_000L,
+                            priority = intent.priority,
+                            category = intent.category
+                        )
+                    }
+                    ephemeralState.update {
+                        it.copy(
+                            selectedTaskFilter = TaskBoardFilter.TODO,
+                            celebratingUntilMillis = now + 2_800L,
+                            celebrationSpeech = "Added '${entity.title}' to your To-Do tasks!"
+                        )
+                    }
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Added To-Do task: ${entity.title}"))
+                }
+            }
+
+            is DeskIntent.ReopenDoneTask -> {
+                viewModelScope.launch {
+                    val reopened = repository.reopenReminderToTodo(intent.reminder.id)
+                    if (reopened != null) {
+                        ephemeralState.update {
+                            it.copy(
+                                celebratingUntilMillis = System.currentTimeMillis() + 2_400L,
+                                celebrationSpeech = "Moved '${reopened.title}' back to your To-Do tasks!"
+                            )
+                        }
+                        _sideEffects.send(DeskSideEffect.ShowMessage("Moved '${reopened.title}' back to To-Do"))
+                    }
+                }
+            }
+
+            is DeskIntent.SaveUserProfile -> {
+                viewModelScope.launch {
+                    val updated = repository.updateUserProfile(
+                        displayName = intent.displayName,
+                        companionTitle = intent.companionTitle,
+                        avatarBadge = intent.avatarBadge,
+                        bioMotto = intent.bioMotto,
+                        dailyReminderGoal = intent.dailyReminderGoal
+                    )
+                    ephemeralState.update {
+                        it.copy(
+                            celebratingUntilMillis = System.currentTimeMillis() + 3_000L,
+                            celebrationSpeech = "Namaste ${updated.displayName}! Daily goal set to ${updated.dailyReminderGoal} task(s)/day!"
+                        )
+                    }
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Saved profile for ${updated.displayName}"))
+                }
             }
 
             DeskIntent.SaveBreathInput -> {
@@ -287,7 +584,7 @@ class DeskPetViewModel(
                             celebrationSpeech = "Tied a knot for '${entity.title}' (${parsed.timeExplanation})!"
                         )
                     }
-                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
                     _sideEffects.send(
                         DeskSideEffect.ShowMessage("Nooki tied a knot: ${entity.title}")
                     )
@@ -309,7 +606,7 @@ class DeskPetViewModel(
                             celebrationSpeech = "Added '${suggestion.sanitizedTitle}' to your thread!"
                         )
                     }
-                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+                    emitSensoryCue(SensoryCue.KNOT_TIED)
                 }
             }
 
@@ -440,7 +737,17 @@ class DeskPetViewModel(
                             activePlayGesture = PetGestureType.PLAY_BOOP
                         )
                     }
-                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+                    val currentState = uiState.value
+                    repository.recordJournalMilestone(
+                        milestoneType = PetMilestoneType.TASK_CHAMPION,
+                        title = "Knot Untied: ${intent.reminder.title}",
+                        narrative = "Completed '${intent.reminder.title}' (+${intent.reminder.petMoodImpact} XP). Nooki celebrated with a 3D hop!",
+                        badgeEmoji = "🪡",
+                        happinessSnapshot = (currentState.moodState.happinessScore + 8).coerceAtMost(100),
+                        streakSnapshot = maxOf(1, currentState.consistencyStreak.currentStreakDays),
+                        timestampMillis = now
+                    )
+                    emitSensoryCue(SensoryCue.TASK_COMPLETED)
                     _sideEffects.send(
                         DeskSideEffect.ShowMessage("Knot untied! +${intent.reminder.petMoodImpact} XP")
                     )
@@ -527,8 +834,8 @@ class DeskPetViewModel(
                 "Cozy belly scritches! My tail can't stop wagging! +${gesture.happinessBoost}% Happiness!"
         }
 
+        val nextCombo = ephemeralState.value.petInteractionCombo + 1
         ephemeralState.update { state ->
-            val nextCombo = state.petInteractionCombo + 1
             state.copy(
                 nowMillis = now,
                 celebratingUntilMillis = now + 3_500L,
@@ -541,14 +848,38 @@ class DeskPetViewModel(
             )
         }
 
+        val sensoryCue = SensoryCue.fromPetGesture(gesture)
         NookiSchedulerTelemetry.record(
             source = "3DGestureEngine",
-            message = "Triggered ${gesture.name} (${gesture.displayLabel}) -> +${gesture.happinessBoost}% MoodState Happiness, +${gesture.xpReward} XP"
+            message = "Triggered ${gesture.name} (${gesture.displayLabel}) -> +${gesture.happinessBoost}% MoodState Happiness, +${gesture.xpReward} XP, Cue=${sensoryCue.name}"
         )
 
         viewModelScope.launch {
-            _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+            emitSensoryCue(sensoryCue)
+            if (nextCombo == 5 || (gesture == PetGestureType.PLAY_BOOP && nextCombo % 4 == 0)) {
+                val current = uiState.value
+                repository.recordJournalMilestone(
+                    milestoneType = PetMilestoneType.BONDING_MOMENT,
+                    title = "3D Bonding Combo x$nextCombo (${gesture.displayLabel})",
+                    narrative = "Shared a joyful ${gesture.displayLabel} session! Nooki's happiness climbed to ${current.moodState.happinessScore}%.",
+                    badgeEmoji = "🦊",
+                    happinessSnapshot = current.moodState.happinessScore,
+                    streakSnapshot = current.consistencyStreak.currentStreakDays,
+                    timestampMillis = now
+                )
+            }
         }
+    }
+
+    private suspend fun emitSensoryCue(cue: SensoryCue) {
+        val current = uiState.value
+        _sideEffects.send(
+            DeskSideEffect.PlaySensoryCue(
+                cue = cue,
+                soundEnabled = current.isSoundEnabled,
+                hapticsEnabled = current.isHapticsEnabled
+            )
+        )
     }
 
     private fun isHeldOrMoneyNote(item: ReminderEntity): Boolean {

@@ -48,7 +48,9 @@ enum class ReminderStatus(val label: String) {
     tableName = "reminders",
     indices = [
         Index(value = ["trigger_at_millis"]),
-        Index(value = ["status"])
+        Index(value = ["status"]),
+        Index(value = ["created_at_millis"]),
+        Index(value = ["completed_day_epoch"])
     ]
 )
 data class ReminderEntity(
@@ -73,6 +75,9 @@ data class ReminderEntity(
 
     @ColumnInfo(name = "completed_at_millis")
     val completedAtMillis: Long? = null,
+
+    @ColumnInfo(name = "completed_day_epoch", defaultValue = "0")
+    val completedDayEpoch: Long = 0L,
 
     @ColumnInfo(name = "priority")
     val priority: ReminderPriority = ReminderPriority.MEDIUM,
@@ -114,6 +119,7 @@ fun ReminderEntity.toDomain(): Reminder = Reminder(
     triggerAtMillis = triggerAtMillis,
     createdAtMillis = createdAtMillis,
     completedAtMillis = completedAtMillis,
+    completedDayEpoch = completedDayEpoch,
     priority = priority,
     category = category,
     status = status,
@@ -133,6 +139,7 @@ fun Reminder.toEntity(): ReminderEntity = ReminderEntity(
     triggerAtMillis = triggerAtMillis,
     createdAtMillis = createdAtMillis,
     completedAtMillis = completedAtMillis,
+    completedDayEpoch = completedDayEpoch,
     priority = priority,
     category = category,
     status = status,

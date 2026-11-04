@@ -16,6 +16,7 @@ data class Reminder(
     val triggerAtMillis: Long,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val completedAtMillis: Long? = null,
+    val completedDayEpoch: Long = 0L,
     val priority: ReminderPriority = ReminderPriority.MEDIUM,
     val category: ReminderCategory = ReminderCategory.DESK,
     val status: ReminderStatus = ReminderStatus.SCHEDULED,

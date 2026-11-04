@@ -65,9 +65,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.domain.model.MoodState
+import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.PetGestureType
 import com.example.ui.theme.LeafGreen
+import com.example.ui.theme.LocalNookiAppTheme
 import com.example.ui.theme.Marigold
 import com.example.ui.theme.NookiCoralAccent
 import com.example.ui.theme.NookiSkyInfo
@@ -107,8 +109,9 @@ private data class InteractiveParticle3D(
 /**
  * Interactive 3D-shaded Nooki Desk-Pet model rendered at the center of the viewport.
  * Features:
- * - Depth-sorted 3D orbital particle system (hearts, 4-point marigold stars, leaf-green fireflies)
- *   whenever Nooki is in a happy state (`moodState.isHappyState`)
+ * - Depth-sorted 3D orbital particle system (hearts, 4-point stars, fireflies)
+ *   whenever Nooki is in a happy state (`moodState.isHappyState`), with colors automatically
+ *   attuned to the active [NookiAppTheme] (`appTheme.particleColorsHex`)
  * - Physics-driven touch particle bursts on tap (`HEAD_PAT`), double-tap (`PLAY_BOOP`),
  *   and continuous drag rub (`BELLY_SCRITCH`)
  * - 360° 3D Play Spin & Hop animation, ear flutter, tail wag speed modulation, and happy crescent eyes
@@ -117,6 +120,7 @@ private data class InteractiveParticle3D(
 fun Nooki3DCenterpiece(
     mood: NookiPetMood,
     moodState: MoodState = MoodState(petMood = mood),
+    appTheme: NookiAppTheme = LocalNookiAppTheme.current,
     speechText: String,
     isAutoRotateEnabled: Boolean,
     petCombo: Int,
@@ -126,6 +130,9 @@ fun Nooki3DCenterpiece(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val themeParticlePalette = remember(appTheme) {
+        appTheme.particleColorsHex.map { Color(it) }
+    }
 
     // User drag angles in degrees (-45f..45f yaw, -25f..25f pitch)
     var userYaw by remember { mutableFloatStateOf(0f) }
@@ -141,7 +148,9 @@ fun Nooki3DCenterpiece(
     val burstParticles = remember { mutableStateListOf<InteractiveParticle3D>() }
 
     fun spawnParticleBurst(originX: Float, originY: Float, count: Int, intensePlay: Boolean) {
-        val palette = listOf(Marigold, Sindoor, LeafGreen, Color(0xFFFF8FA3), Color(0xFFFDE68A))
+        val palette = themeParticlePalette.ifEmpty {
+            listOf(Marigold, Sindoor, LeafGreen, Color(0xFFFF8FA3))
+        }
         repeat(count) { idx ->
             val angle = (idx.toFloat() / count.toFloat()) * (2f * Math.PI.toFloat()) +
                 Random.nextFloat() * 0.45f
@@ -407,6 +416,7 @@ fun Nooki3DCenterpiece(
 
                         // Spawn subtle sparkle trail while rubbing Nooki in 3D
                         if (Random.nextFloat() < 0.38f) {
+                            val trailPalette = themeParticlePalette.ifEmpty { listOf(Marigold, Sindoor) }
                             burstParticles.add(
                                 InteractiveParticle3D(
                                     id = System.nanoTime(),
@@ -416,7 +426,7 @@ fun Nooki3DCenterpiece(
                                     vy = -45f - Random.nextFloat() * 45f,
                                     zDepth = 1f,
                                     sizeDp = 7.5f,
-                                    color = if (Random.nextBoolean()) Marigold else Sindoor,
+                                    color = trailPalette[Random.nextInt(trailPalette.size)],
                                     glyph = if (Random.nextBoolean()) ParticleGlyph.HEART else ParticleGlyph.STAR_4PT,
                                     lifeRemaining = 0.75f
                                 )
@@ -489,7 +499,8 @@ fun Nooki3DCenterpiece(
                         cx = cx,
                         cy = petCenterY,
                         phase = happyParticlePhase,
-                        renderFrontHalf = false
+                        renderFrontHalf = false,
+                        particlePalette = themeParticlePalette
                     )
                 }
 
@@ -869,7 +880,8 @@ fun Nooki3DCenterpiece(
                         cx = cx,
                         cy = petCenterY,
                         phase = happyParticlePhase,
-                        renderFrontHalf = true
+                        renderFrontHalf = true,
+                        particlePalette = themeParticlePalette
                     )
                 }
 
@@ -945,18 +957,22 @@ fun Nooki3DCenterpiece(
 }
 
 /**
- * Draws the depth-sorted 3D orbital particle field around Nooki when in a happy state.
+ * Draws the depth-sorted 3D orbital particle field around Nooki when in a happy state,
+ * using colors automatically attuned to the active [NookiAppTheme].
  */
 private fun DrawScope.drawHappyOrbitalParticles(
     cx: Float,
     cy: Float,
     phase: Float,
-    renderFrontHalf: Boolean
+    renderFrontHalf: Boolean,
+    particlePalette: List<Color>
 ) {
     val totalParticles = 12
     val orbitRadiusX = 114.dp.toPx()
     val orbitRadiusY = 38.dp.toPx()
-    val palette = listOf(Marigold, Sindoor, LeafGreen, Color(0xFFFF8FA3))
+    val palette = particlePalette.ifEmpty {
+        listOf(Marigold, Sindoor, LeafGreen, Color(0xFFFF8FA3))
+    }
 
     for (i in 0 until totalParticles) {
         val baseAngle = phase + (i.toFloat() / totalParticles.toFloat()) * (2f * Math.PI.toFloat())

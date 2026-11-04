@@ -1,12 +1,18 @@
 package com.example.presentation.mvi
 
+import com.example.data.local.entity.PetJournalEntryEntity
+import com.example.data.local.entity.PetMilestoneType
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
+import com.example.data.local.entity.UserProfileEntity
+import com.example.domain.model.ConsistencyStreakState
 import com.example.domain.model.MoodState
+import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiPetState
 import com.example.domain.model.PetGestureType
+import com.example.domain.model.SensoryCue
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
 import com.example.domain.notice.NoticeSourceKind
@@ -15,14 +21,29 @@ import com.example.domain.parser.ParsedBreathCapture
 import com.example.scheduler.SchedulerDiagnosticEntry
 
 /**
+ * Filter state for the To-Do & Done Tasks section.
+ */
+enum class TaskBoardFilter(val label: String) {
+    TODO("To-Do Tasks"),
+    DONE("Done Tasks")
+}
+
+/**
  * Immutable UI State emitted by [com.example.presentation.viewmodel.DeskPetViewModel]'s
- * [kotlinx.coroutines.flow.StateFlow], including [moodState] computed from reminder completion
- * frequency and 3D petting/play gestures.
+ * [kotlinx.coroutines.flow.StateFlow], including [moodState], [consistencyStreak],
+ * [todoTasks], [doneTasks], [userProfile], [selectedTheme], [journalEntries], and sensory mute states.
  */
 data class DeskUiState(
     val petState: NookiPetState = NookiPetState.IdleCozy(),
     val petMood: NookiPetMood = NookiPetMood.IDLE_COZY,
     val moodState: MoodState = MoodState(),
+    val consistencyStreak: ConsistencyStreakState = ConsistencyStreakState(),
+    val userProfile: UserProfileEntity = UserProfileEntity(),
+    val selectedTheme: NookiAppTheme = NookiAppTheme.MIDNIGHT_COZY,
+    val journalEntries: List<PetJournalEntryEntity> = emptyList(),
+    val selectedJournalFilter: PetMilestoneType? = null,
+    val isSoundEnabled: Boolean = true,
+    val isHapticsEnabled: Boolean = true,
     val speechBubbleText: String = NookiPetMood.IDLE_COZY.defaultSpeech,
     val stateTransitionSummary: String = "STATE_IDLE_COZY • Listening to Room Flow",
     val level: Int = 1,
@@ -41,6 +62,11 @@ data class DeskUiState(
     val activeReminders: List<ReminderEntity> = emptyList(),
     val ringingReminders: List<ReminderEntity> = emptyList(),
     val overdueReminders: List<ReminderEntity> = emptyList(),
+
+    // Dedicated To-Do Tasks & Done Tasks lists + active filter
+    val todoTasks: List<ReminderEntity> = emptyList(),
+    val doneTasks: List<ReminderEntity> = emptyList(),
+    val selectedTaskFilter: TaskBoardFilter = TaskBoardFilter.TODO,
 
     // 1. What did I miss? (Sindoor #E23B3B)
     val youMissedKnots: List<ReminderEntity> = emptyList(),
@@ -73,8 +99,34 @@ sealed interface DeskIntent {
     data object PetNookiHead : DeskIntent
     data class TriggerPetGesture(val gesture: PetGestureType) : DeskIntent
     data object ToggleAutoRotate3D : DeskIntent
+    data object ToggleSoundEnabled : DeskIntent
+    data object ToggleHapticsEnabled : DeskIntent
+    data class PreviewSensoryCue(val cue: SensoryCue) : DeskIntent
+    data class SelectAppTheme(val theme: NookiAppTheme) : DeskIntent
+    data class SelectJournalFilter(val milestoneType: PetMilestoneType?) : DeskIntent
+    data class AddCustomJournalNote(
+        val title: String,
+        val narrative: String,
+        val milestoneType: PetMilestoneType = PetMilestoneType.BONDING_MOMENT
+    ) : DeskIntent
+    data class DeleteJournalEntry(val id: Long) : DeskIntent
     data class UpdateBreathInput(val text: String) : DeskIntent
     data object SaveBreathInput : DeskIntent
+    data class SelectTaskBoardFilter(val filter: TaskBoardFilter) : DeskIntent
+    data class QuickAddTodoTask(
+        val title: String,
+        val priority: ReminderPriority = ReminderPriority.MEDIUM,
+        val category: ReminderCategory = ReminderCategory.DESK
+    ) : DeskIntent
+    data class ReopenDoneTask(val reminder: ReminderEntity) : DeskIntent
+    data class SaveUserProfile(
+        val displayName: String,
+        val companionTitle: String,
+        val avatarBadge: String,
+        val bioMotto: String,
+        val dailyReminderGoal: Int
+    ) : DeskIntent
+
     data class AcceptNoticeSuggestion(val suggestion: NoticeInspectionResult.SafeSuggestion) : DeskIntent
     data class DismissNoticeSuggestion(val suggestion: NoticeInspectionResult.SafeSuggestion) : DeskIntent
     data class ToggleNoticeKind(val kind: NoticeSourceKind) : DeskIntent
@@ -103,9 +155,15 @@ sealed interface DeskIntent {
 }
 
 /**
- * One-shot UI side effects (Snackbars, Haptics) emitted via a buffered Channel.
+ * One-shot UI side effects (Snackbars, Haptic Waveforms, and Cozy Sound Effects)
+ * emitted via a buffered Channel.
  */
 sealed interface DeskSideEffect {
     data class ShowMessage(val message: String) : DeskSideEffect
     data object TriggerHapticPulse : DeskSideEffect
+    data class PlaySensoryCue(
+        val cue: SensoryCue,
+        val soundEnabled: Boolean = true,
+        val hapticsEnabled: Boolean = true
+    ) : DeskSideEffect
 }

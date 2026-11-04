@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -89,6 +90,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -123,10 +125,15 @@ import com.example.domain.parser.NookiCaptureKind
 import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskSideEffect
 import com.example.presentation.mvi.DeskUiState
+import com.example.presentation.ui.components.ConsistencyStreakCard
 import com.example.presentation.ui.components.Nooki3DCenterpiece
+import com.example.presentation.ui.components.NookiTasksAndProfileScreen
+import com.example.presentation.ui.components.TodoAndDoneTasksSection
+import com.example.presentation.ui.components.UserProfileAndStreakBannerChip
 import com.example.presentation.viewmodel.DeskPetViewModel
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
+import com.example.scheduler.NookiSensoryFeedbackManager
 import com.example.scheduler.NotificationHelper
 import com.example.scheduler.receiver.ReminderAlarmReceiver
 import com.example.ui.theme.LeafGreen
@@ -152,11 +159,14 @@ class MainActivity : ComponentActivity() {
         val repository = ReminderRepositoryImpl(database.reminderDao(), alarmScheduler)
 
         setContent {
-            MyApplicationTheme {
-                val viewModel: DeskPetViewModel = viewModel(
-                    factory = DeskPetViewModel.Factory(repository, alarmScheduler)
-                )
+            val viewModel: DeskPetViewModel = viewModel(
+                factory = DeskPetViewModel.Factory(repository, alarmScheduler)
+            )
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+            MyApplicationTheme(appTheme = uiState.selectedTheme) {
                 NookiMainApp(
+                    uiState = uiState,
                     viewModel = viewModel,
                     alarmScheduler = alarmScheduler
                 )
@@ -167,12 +177,13 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun NookiMainApp(
+    uiState: DeskUiState,
     viewModel: DeskPetViewModel,
     alarmScheduler: AndroidExactAlarmScheduler
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scheme = MaterialTheme.colorScheme
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -207,11 +218,25 @@ fun NookiMainApp(
         }
     }
 
+    val sensoryManager = remember(context) {
+        NookiSensoryFeedbackManager(context.applicationContext)
+    }
+    DisposableEffect(sensoryManager) {
+        onDispose { sensoryManager.release() }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.sideEffects.collect { effect ->
             when (effect) {
                 is DeskSideEffect.ShowMessage -> snackbarHostState.showSnackbar(effect.message)
                 DeskSideEffect.TriggerHapticPulse -> NotificationHelper.triggerDeskPetPulseVibration(context)
+                is DeskSideEffect.PlaySensoryCue -> {
+                    sensoryManager.performSensoryCue(
+                        cue = effect.cue,
+                        soundEnabled = effect.soundEnabled,
+                        hapticsEnabled = effect.hapticsEnabled
+                    )
+                }
             }
         }
     }
@@ -227,7 +252,7 @@ fun NookiMainApp(
         bottomBar = {
             NavigationBar(
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
-                containerColor = NeelIndigo
+                containerColor = scheme.surface
             ) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
@@ -246,16 +271,36 @@ fun NookiMainApp(
                     onClick = { selectedTab = 1 },
                     icon = {
                         Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Tasks & User Profile"
+                        )
+                    },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Tasks & Profile")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) {
+                                Text("${uiState.consistencyStreak.currentStreakDays}d")
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("nav_tab_profile_tasks")
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = {
+                        Icon(
                             imageVector = Icons.Default.Shield,
                             contentDescription = "Nooki Notices & Reliability"
                         )
                     },
                     label = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Nooki Notices")
+                            Text("Notices")
                             if (uiState.noticeSuggestions.isNotEmpty()) {
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Badge(containerColor = Marigold, contentColor = NightIndigo) {
+                                Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) {
                                     Text("${uiState.noticeSuggestions.size}")
                                 }
                             }
@@ -272,54 +317,64 @@ fun NookiMainApp(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            NightIndigo,
-                            NeelIndigo,
-                            NightIndigo
+                            scheme.background,
+                            scheme.surface,
+                            scheme.background
                         )
                     )
                 )
                 .padding(innerPadding),
             contentAlignment = Alignment.TopCenter
         ) {
-            if (selectedTab == 0) {
-                NookiThreadHomeScreen(
-                    uiState = uiState,
-                    hasNotificationPermission = hasNotificationPermission,
-                    onRequestNotificationPermission = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            when (selectedTab) {
+                0 -> {
+                    NookiThreadHomeScreen(
+                        uiState = uiState,
+                        hasNotificationPermission = hasNotificationPermission,
+                        onRequestNotificationPermission = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
+                        onStartVoiceCapture = {
+                            val voiceIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                )
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Tell Nooki in English, Hinglish, or हिंदी...")
+                            }
+                            runCatching { speechRecognizerLauncher.launch(voiceIntent) }
+                        },
+                        onOpenProfileAndTasksTab = { selectedTab = 1 },
+                        onIntent = viewModel::onIntent,
+                        onFireAlarmNow = { reminder ->
+                            val broadcastIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
+                                action = AndroidExactAlarmScheduler.ACTION_TRIGGER_REMINDER_ALARM
+                                putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
+                                putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_TITLE, reminder.title)
+                            }
+                            context.sendBroadcast(broadcastIntent)
                         }
-                    },
-                    onStartVoiceCapture = {
-                        val voiceIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(
-                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                            )
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Tell Nooki in English, Hinglish, or हिंदी...")
-                        }
-                        runCatching { speechRecognizerLauncher.launch(voiceIntent) }
-                    },
-                    onIntent = viewModel::onIntent,
-                    onFireAlarmNow = { reminder ->
-                        val broadcastIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
-                            action = AndroidExactAlarmScheduler.ACTION_TRIGGER_REMINDER_ALARM
-                            putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
-                            putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_TITLE, reminder.title)
-                        }
-                        context.sendBroadcast(broadcastIntent)
-                    }
-                )
-            } else {
-                NookiNoticesAndReliabilityScreen(
-                    uiState = uiState,
-                    onOpenExactAlarmSettings = {
-                        alarmScheduler.buildExactAlarmPermissionIntent()?.let { intent ->
-                            runCatching { context.startActivity(intent) }
-                        }
-                    },
-                    onIntent = viewModel::onIntent
-                )
+                    )
+                }
+                1 -> {
+                    NookiTasksAndProfileScreen(
+                        uiState = uiState,
+                        onIntent = viewModel::onIntent
+                    )
+                }
+                else -> {
+                    NookiNoticesAndReliabilityScreen(
+                        uiState = uiState,
+                        onOpenExactAlarmSettings = {
+                            alarmScheduler.buildExactAlarmPermissionIntent()?.let { intent ->
+                                runCatching { context.startActivity(intent) }
+                            }
+                        },
+                        onIntent = viewModel::onIntent
+                    )
+                }
             }
         }
     }
@@ -327,13 +382,11 @@ fun NookiMainApp(
 
 /**
  * The signature Nooki Home Screen:
- * - Centered 3D Nooki Fox at the top/center
+ * - User Profile & Consistency Streak Banner at the top
+ * - Centered 3D Nooki Fox at the center
  * - "Tell Nooki: capture in one breath" bar with real-time "What Nooki understood" preview
- * - One continuous Thread dropping from Nooki's paw down the left of the screen,
- *   answering the Three Questions with color-coded knots:
- *   1. "You missed" (Sindoor #E23B3B)
- *   2. "You forgot & Nooki holds for you" (Marigold #FFAE1A)
- *   3. "Today & coming up" (Indigo #7B8CDE) + "Done" (Leaf #1F9D6B)
+ * - One continuous Thread dropping from Nooki's paw down the left of the screen
+ * - Dedicated To-Do Tasks & Done Tasks organizer section
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -342,10 +395,12 @@ private fun NookiThreadHomeScreen(
     hasNotificationPermission: Boolean,
     onRequestNotificationPermission: () -> Unit,
     onStartVoiceCapture: () -> Unit,
+    onOpenProfileAndTasksTab: () -> Unit,
     onIntent: (DeskIntent) -> Unit,
     onFireAlarmNow: (ReminderEntity) -> Unit
 ) {
     val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
 
     // Signature opening motion: "One moment when the app opens: the thread drops from Nooki."
     val threadDropProgress = remember { Animatable(0f) }
@@ -378,26 +433,26 @@ private fun NookiThreadHomeScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Nooki • Lv.${uiState.level}",
+                            text = "Nooki • Lv.${uiState.level} • ${uiState.selectedTheme.badgeEmoji} ${uiState.selectedTheme.displayName}",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = Marigold
+                            color = scheme.primary
                         )
                         Text(
                             text = "${uiState.moodState.happinessTier.badgeEmoji} ${uiState.moodState.happinessTier.label} • ${uiState.moodState.completedLast24Hours} untied in 24h",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = WashedCotton.copy(alpha = 0.85f)
+                            color = scheme.onBackground.copy(alpha = 0.85f)
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = NeelIndigo,
-                            modifier = Modifier.border(1.dp, LeafGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
+                            color = scheme.surface,
+                            modifier = Modifier.border(1.dp, scheme.secondary.copy(alpha = 0.5f), RoundedCornerShape(50))
                         ) {
                             Text(
                                 text = "Happiness ${uiState.moodState.happinessScore}%",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = LeafGreen,
+                                color = scheme.secondary,
                                 modifier = Modifier
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
                                     .testTag("happiness_score_badge")
@@ -405,13 +460,13 @@ private fun NookiThreadHomeScreen(
                         }
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = NeelIndigo,
-                            modifier = Modifier.border(1.dp, Marigold.copy(alpha = 0.4f), RoundedCornerShape(50))
+                            color = scheme.surface,
+                            modifier = Modifier.border(1.dp, scheme.primary.copy(alpha = 0.4f), RoundedCornerShape(50))
                         ) {
                             Text(
                                 text = "${uiState.totalXp} XP",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = Marigold,
+                                color = scheme.primary,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
@@ -424,13 +479,25 @@ private fun NookiThreadHomeScreen(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(50)),
-                    color = LeafGreen,
-                    trackColor = NeelIndigo
+                    color = scheme.secondary,
+                    trackColor = scheme.surface
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                UserProfileAndStreakBannerChip(
+                    userProfile = uiState.userProfile,
+                    streakState = uiState.consistencyStreak,
+                    isSoundEnabled = uiState.isSoundEnabled,
+                    isHapticsEnabled = uiState.isHapticsEnabled,
+                    onToggleSound = { onIntent(DeskIntent.ToggleSoundEnabled) },
+                    onToggleHaptics = { onIntent(DeskIntent.ToggleHapticsEnabled) },
+                    onOpenProfileTab = onOpenProfileAndTasksTab
                 )
             }
         }
 
-        // 2. Centered 3D Nooki Fox Companion (with Happy State 3D Particles & Touch Gestures)
+        // 2. Centered 3D Nooki Fox Companion (with Theme-Synced Happy State 3D Particles & Touch Gestures)
         item {
             Box(
                 modifier = Modifier
@@ -441,6 +508,7 @@ private fun NookiThreadHomeScreen(
                 Nooki3DCenterpiece(
                     mood = uiState.petMood,
                     moodState = uiState.moodState,
+                    appTheme = uiState.selectedTheme,
                     speechText = uiState.speechBubbleText,
                     isAutoRotateEnabled = uiState.isAutoRotate3DEnabled,
                     petCombo = uiState.petInteractionCombo,
@@ -658,7 +726,30 @@ private fun NookiThreadHomeScreen(
             }
         }
 
+        // =========================================================================
+        // Consistency Streak & Dedicated To-Do / Done Tasks Section on Home Screen
+        // =========================================================================
         item {
+            Spacer(modifier = Modifier.height(16.dp))
+            ConsistencyStreakCard(streakState = uiState.consistencyStreak)
+            Spacer(modifier = Modifier.height(14.dp))
+            TodoAndDoneTasksSection(
+                todoTasks = uiState.todoTasks,
+                doneTasks = uiState.doneTasks,
+                selectedFilter = uiState.selectedTaskFilter,
+                nowMillis = uiState.nowMillis,
+                onSelectFilter = { onIntent(DeskIntent.SelectTaskBoardFilter(it)) },
+                onQuickAddTodo = { title, priority, category ->
+                    onIntent(DeskIntent.QuickAddTodoTask(title, priority, category))
+                },
+                onCompleteTask = {
+                    NotificationHelper.cancelNotification(context, it.id)
+                    onIntent(DeskIntent.CompleteReminder(it))
+                },
+                onReopenDoneTask = { onIntent(DeskIntent.ReopenDoneTask(it)) },
+                onDeleteTask = { onIntent(DeskIntent.DeleteReminder(it)) },
+                onClearAllDone = { onIntent(DeskIntent.ClearCompleted) }
+            )
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

@@ -1,6 +1,7 @@
 package com.example.data.local.converter
 
 import androidx.room.TypeConverter
+import com.example.data.local.entity.PetMilestoneType
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
@@ -30,4 +31,11 @@ class ReminderTypeConverters {
     @TypeConverter
     fun toStatus(value: String): ReminderStatus =
         runCatching { ReminderStatus.valueOf(value) }.getOrDefault(ReminderStatus.SCHEDULED)
+
+    @TypeConverter
+    fun fromMilestoneType(type: PetMilestoneType): String = type.name
+
+    @TypeConverter
+    fun toMilestoneType(value: String): PetMilestoneType =
+        runCatching { PetMilestoneType.valueOf(value) }.getOrDefault(PetMilestoneType.PERSONALITY_SHIFT)
 }

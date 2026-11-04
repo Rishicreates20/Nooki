@@ -193,4 +193,110 @@ class ExampleUnitTest {
         assertTrue(afterPlayBoop.isHappyState)
         assertEquals(com.example.domain.model.PetGestureType.PLAY_BOOP, afterPlayBoop.activePlayGesture)
     }
+
+    @Test
+    fun consistencyStreak_tracksConsecutiveDaysAndLongestStreak() {
+        val now = 1762260000000L
+        val oneDayMs = 86_400_000L
+
+        val completedThreeConsecutiveDays = listOf(
+            ReminderEntity(
+                id = 10L,
+                title = "Today task",
+                triggerAtMillis = now - 3_600_000L,
+                completedAtMillis = now - 1_800_000L,
+                completedDayEpoch = com.example.domain.model.ConsistencyStreakCalculator.toLocalDayEpoch(now),
+                status = ReminderStatus.COMPLETED
+            ),
+            ReminderEntity(
+                id = 11L,
+                title = "Yesterday task",
+                triggerAtMillis = now - oneDayMs - 3_600_000L,
+                completedAtMillis = now - oneDayMs,
+                completedDayEpoch = com.example.domain.model.ConsistencyStreakCalculator.toLocalDayEpoch(now - oneDayMs),
+                status = ReminderStatus.COMPLETED
+            ),
+            ReminderEntity(
+                id = 12L,
+                title = "Two days ago task",
+                triggerAtMillis = now - 2 * oneDayMs - 3_600_000L,
+                completedAtMillis = now - 2 * oneDayMs,
+                completedDayEpoch = com.example.domain.model.ConsistencyStreakCalculator.toLocalDayEpoch(now - 2 * oneDayMs),
+                status = ReminderStatus.COMPLETED
+            )
+        )
+
+        val streakState = com.example.domain.model.ConsistencyStreakCalculator.compute(
+            allReminders = completedThreeConsecutiveDays,
+            nowMillis = now,
+            persistedLongestStreak = 2,
+            dailyGoalCount = 2
+        )
+
+        assertEquals(3, streakState.currentStreakDays)
+        assertEquals(3, streakState.longestStreakDays)
+        assertEquals(1, streakState.completedTodayCount)
+        assertTrue(streakState.isTodayStreakSecured)
+        assertEquals(7, streakState.last7DaysTimeline.size)
+    }
+
+    @Test
+    fun sensoryCueAndCozyWaveSynthesizer_generateValidWaveformsAndRiffWavAudio() {
+        for (cue in com.example.domain.model.SensoryCue.entries) {
+            assertEquals(cue.waveformTimings.size, cue.waveformAmplitudes.size)
+            assertTrue(cue.waveformTimings.isNotEmpty())
+            assertTrue(cue.waveformAmplitudes.all { it in 0..255 })
+
+            val wavBytes = com.example.scheduler.CozyWaveSynthesizer.synthesizeWavBytes(cue)
+            assertTrue(wavBytes.size > 44)
+            assertEquals("RIFF", String(wavBytes, 0, 4, Charsets.US_ASCII))
+            assertEquals("WAVE", String(wavBytes, 8, 4, Charsets.US_ASCII))
+        }
+    }
+
+    @Test
+    fun nookiAppTheme_providesDistinctColorPalettesAndMatching3DParticleColors() {
+        val midnight = com.example.domain.model.NookiAppTheme.fromId("MIDNIGHT_COZY")
+        val forest = com.example.domain.model.NookiAppTheme.fromId("FOREST_MEADOW")
+        val hearth = com.example.domain.model.NookiAppTheme.fromId("WARM_HEARTH")
+
+        assertEquals(com.example.domain.model.NookiAppTheme.MIDNIGHT_COZY, midnight)
+        assertEquals(com.example.domain.model.NookiAppTheme.FOREST_MEADOW, forest)
+        assertEquals(com.example.domain.model.NookiAppTheme.WARM_HEARTH, hearth)
+
+        assertTrue(forest.backgroundDeepHex != midnight.backgroundDeepHex)
+        assertTrue(hearth.backgroundDeepHex != forest.backgroundDeepHex)
+
+        for (theme in com.example.domain.model.NookiAppTheme.entries) {
+            assertEquals(5, theme.particleColorsHex.size)
+            assertTrue(theme.displayName.isNotBlank())
+        }
+        assertTrue(forest.particleColorsHex != midnight.particleColorsHex)
+        assertTrue(hearth.particleColorsHex != forest.particleColorsHex)
+    }
+
+    @Test
+    fun petJournalEntry_recordsHighStreakAndPersonalityShiftMilestones() {
+        val streakEntry = com.example.data.local.entity.PetJournalEntryEntity(
+            id = 1L,
+            milestoneType = com.example.data.local.entity.PetMilestoneType.FIRST_HIGH_STREAK,
+            title = "First High-Streak Achievement (5-Day Thread)",
+            narrative = "Completed scheduled reminders 5 days in a row!",
+            happinessSnapshot = 95,
+            streakSnapshot = 5
+        )
+        val personalityEntry = com.example.data.local.entity.PetJournalEntryEntity(
+            id = 2L,
+            milestoneType = com.example.data.local.entity.PetMilestoneType.PERSONALITY_SHIFT,
+            title = "Pet Personality Shift: Radiant & Joyful",
+            narrative = "Nooki shifted to Radiant & Joyful with orbital fireflies!",
+            happinessSnapshot = 92,
+            streakSnapshot = 5
+        )
+
+        assertEquals("🔥", streakEntry.badgeEmoji)
+        assertEquals("High-Streak Achievement", streakEntry.milestoneType.categoryLabel)
+        assertEquals("✨", personalityEntry.badgeEmoji)
+        assertEquals("Pet Personality Shift", personalityEntry.milestoneType.categoryLabel)
+    }
 }

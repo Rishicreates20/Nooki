@@ -39,6 +39,13 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 when (action) {
                     AndroidExactAlarmScheduler.ACTION_COMPLETE_REMINDER -> {
                         val completed = repository.completeReminder(reminderId)
+                        val profile = database.reminderDao().getUserProfile()
+                        if (profile?.hapticsEnabled != false) {
+                            com.example.scheduler.NookiSensoryFeedbackManager.triggerHapticWaveform(
+                                appContext,
+                                com.example.domain.model.SensoryCue.TASK_COMPLETED
+                            )
+                        }
                         NotificationHelper.cancelNotification(appContext, reminderId)
                         NookiSchedulerTelemetry.record(
                             source = "ReminderActionReceiver",

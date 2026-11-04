@@ -1,12 +1,16 @@
 package com.example.data.repository
 
 import com.example.data.local.dao.ReminderDao
+import com.example.data.local.entity.PetJournalEntryEntity
+import com.example.data.local.entity.PetMilestoneType
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
+import com.example.data.local.entity.UserProfileEntity
+import com.example.domain.model.ConsistencyStreakCalculator
+import com.example.domain.model.NookiAppTheme
 import com.example.domain.parser.NookiBreathParser
-import com.example.domain.parser.NookiCaptureKind
 import com.example.domain.parser.ParsedBreathCapture
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.ScheduleResult
@@ -31,6 +35,9 @@ interface ReminderRepository {
     val activeReminders: Flow<List<ReminderEntity>>
     val completedCount: Flow<Int>
     val totalEarnedXp: Flow<Int>
+    val completedDayEpochs: Flow<List<Long>>
+    val userProfile: Flow<UserProfileEntity?>
+    val journalEntries: Flow<List<PetJournalEntryEntity>>
 
     suspend fun getReminderById(id: Long): ReminderEntity?
     suspend fun createAndScheduleReminder(
@@ -46,12 +53,40 @@ interface ReminderRepository {
     suspend fun saveParsedBreathCapture(parsed: ParsedBreathCapture): Pair<ReminderEntity, ScheduleResult>
     suspend fun markRinging(id: Long): ReminderEntity?
     suspend fun completeReminder(id: Long): ReminderEntity?
+    suspend fun reopenReminderToTodo(id: Long): ReminderEntity?
     suspend fun snoozeReminder(id: Long, snoozeMinutes: Int = 5): Pair<ReminderEntity, ScheduleResult>?
     suspend fun dismissReminder(id: Long)
     suspend fun deleteReminder(id: Long)
     suspend fun clearCompletedReminders()
     suspend fun moveUnfinishedTodayToTomorrowMorning(nowMillis: Long = System.currentTimeMillis()): Int
     suspend fun reconcileAndRescheduleAlarms(nowMillis: Long = System.currentTimeMillis()): BootRecoveryReport
+    suspend fun updateUserProfile(
+        displayName: String,
+        companionTitle: String,
+        avatarBadge: String,
+        bioMotto: String,
+        dailyReminderGoal: Int
+    ): UserProfileEntity
+    suspend fun updateSensoryPreferences(
+        soundEnabled: Boolean,
+        hapticsEnabled: Boolean
+    ): UserProfileEntity
+    suspend fun selectAppTheme(theme: NookiAppTheme): UserProfileEntity
+    suspend fun recordJournalMilestone(
+        milestoneType: PetMilestoneType,
+        title: String,
+        narrative: String,
+        badgeEmoji: String = milestoneType.defaultBadgeEmoji,
+        happinessSnapshot: Int = 75,
+        streakSnapshot: Int = 1,
+        timestampMillis: Long = System.currentTimeMillis()
+    ): PetJournalEntryEntity
+    suspend fun deleteJournalEntry(id: Long)
+    suspend fun syncConsistencyStreakInProfile(
+        currentStreakDays: Int,
+        longestStreakDays: Int,
+        lastCompletedDayEpoch: Long
+    )
     suspend fun seedStarterRemindersIfEmpty()
 }
 
@@ -60,6 +95,7 @@ interface ReminderRepository {
  * - Nothing quietly disappears (swiping away moves to `MISSED`, repeating reminders survive being ignored,
  *   medicine keeps asking up to 3 times before staying in `MISSED`).
  * - Dates that matter automatically schedule lead warnings.
+ * - Tracks `completedDayEpoch`, `UserProfileEntity`, `NookiAppTheme`, and `PetJournalEntryEntity` milestones.
  */
 class ReminderRepositoryImpl(
     private val reminderDao: ReminderDao,
@@ -70,6 +106,9 @@ class ReminderRepositoryImpl(
     override val activeReminders: Flow<List<ReminderEntity>> = reminderDao.observeActiveReminders()
     override val completedCount: Flow<Int> = reminderDao.observeCompletedCount()
     override val totalEarnedXp: Flow<Int> = reminderDao.observeTotalEarnedXp()
+    override val completedDayEpochs: Flow<List<Long>> = reminderDao.observeCompletedDayEpochs()
+    override val userProfile: Flow<UserProfileEntity?> = reminderDao.observeUserProfile()
+    override val journalEntries: Flow<List<PetJournalEntryEntity>> = reminderDao.observeJournalEntries()
 
     override suspend fun getReminderById(id: Long): ReminderEntity? =
         reminderDao.getReminderById(id)
@@ -130,7 +169,12 @@ class ReminderRepositoryImpl(
         if (existing.status == ReminderStatus.COMPLETED || existing.status == ReminderStatus.CANCELLED) {
             return existing
         }
-        reminderDao.updateStatus(id = id, status = ReminderStatus.RINGING, completedAtMillis = null)
+        reminderDao.updateStatus(
+            id = id,
+            status = ReminderStatus.RINGING,
+            completedAtMillis = null,
+            completedDayEpoch = 0L
+        )
         return existing.copy(status = ReminderStatus.RINGING)
     }
 
@@ -138,10 +182,12 @@ class ReminderRepositoryImpl(
         val existing = reminderDao.getReminderById(id) ?: return null
         alarmScheduler.cancel(id)
         val now = System.currentTimeMillis()
+        val dayEpoch = ConsistencyStreakCalculator.toLocalDayEpoch(now)
         reminderDao.updateStatus(
             id = id,
             status = ReminderStatus.COMPLETED,
-            completedAtMillis = now
+            completedAtMillis = now,
+            completedDayEpoch = dayEpoch
         )
         // Repeating reminders automatically schedule the next cycle when untied
         val recurrenceMins = existing.recurrenceMinutes
@@ -157,7 +203,41 @@ class ReminderRepositoryImpl(
                 recurrenceMinutes = recurrenceMins
             )
         }
-        return existing.copy(status = ReminderStatus.COMPLETED, completedAtMillis = now)
+        return existing.copy(
+            status = ReminderStatus.COMPLETED,
+            completedAtMillis = now,
+            completedDayEpoch = dayEpoch
+        )
+    }
+
+    override suspend fun reopenReminderToTodo(id: Long): ReminderEntity? {
+        val existing = reminderDao.getReminderById(id) ?: return null
+        val now = System.currentTimeMillis()
+        val nextTrigger = if (existing.triggerAtMillis > now) {
+            existing.triggerAtMillis
+        } else {
+            now + 30 * 60_000L
+        }
+        reminderDao.updateStatus(
+            id = id,
+            status = ReminderStatus.SCHEDULED,
+            completedAtMillis = null,
+            completedDayEpoch = 0L
+        )
+        reminderDao.updateTriggerTimeAndStatus(
+            id = id,
+            triggerAtMillis = nextTrigger,
+            status = ReminderStatus.SCHEDULED,
+            snoozeCount = existing.snoozeCount
+        )
+        val reopened = existing.copy(
+            triggerAtMillis = nextTrigger,
+            status = ReminderStatus.SCHEDULED,
+            completedAtMillis = null,
+            completedDayEpoch = 0L
+        )
+        alarmScheduler.scheduleExact(reopened)
+        return reopened
     }
 
     override suspend fun snoozeReminder(
@@ -199,7 +279,6 @@ class ReminderRepositoryImpl(
             existing.title.contains("medicine", ignoreCase = true)
 
         if (isMedicine && existing.snoozeCount < 3) {
-            // Medicine keeps asking until confirmed, up to 3 times
             val retryAt = System.currentTimeMillis() + 10 * 60_000L
             val nextCount = existing.snoozeCount + 1
             reminderDao.updateTriggerTimeAndStatus(
@@ -218,14 +297,13 @@ class ReminderRepositoryImpl(
             return
         }
 
-        // Move to "You missed" (Vermilion thread) instead of disappearing
         reminderDao.updateStatus(
             id = id,
             status = ReminderStatus.MISSED,
-            completedAtMillis = null
+            completedAtMillis = null,
+            completedDayEpoch = 0L
         )
 
-        // Repeating reminders survive being ignored!
         val recurrenceMins = existing.recurrenceMinutes
         if (recurrenceMins != null && recurrenceMins > 0 && existing.snoozeCount == 0) {
             val nextTrigger = System.currentTimeMillis() + recurrenceMins * 60_000L
@@ -303,7 +381,8 @@ class ReminderRepositoryImpl(
                 reminderDao.updateStatus(
                     id = reminder.id,
                     status = ReminderStatus.MISSED,
-                    completedAtMillis = null
+                    completedAtMillis = null,
+                    completedDayEpoch = 0L
                 )
                 missed++
             }
@@ -317,9 +396,154 @@ class ReminderRepositoryImpl(
         )
     }
 
+    override suspend fun updateUserProfile(
+        displayName: String,
+        companionTitle: String,
+        avatarBadge: String,
+        bioMotto: String,
+        dailyReminderGoal: Int
+    ): UserProfileEntity {
+        val existing = reminderDao.getUserProfile() ?: UserProfileEntity()
+        val updated = existing.copy(
+            displayName = displayName.trim().ifEmpty { "Aarav" },
+            companionTitle = companionTitle.trim().ifEmpty { "Keeper of the Thread" },
+            avatarBadge = avatarBadge.trim().ifEmpty { "🦊" },
+            bioMotto = bioMotto.trim().ifEmpty { "One thread, calm mind" },
+            dailyReminderGoal = dailyReminderGoal.coerceIn(1, 10),
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        reminderDao.upsertUserProfile(updated)
+        return updated
+    }
+
+    override suspend fun updateSensoryPreferences(
+        soundEnabled: Boolean,
+        hapticsEnabled: Boolean
+    ): UserProfileEntity {
+        val existing = reminderDao.getUserProfile() ?: UserProfileEntity()
+        val updated = existing.copy(
+            soundEnabled = soundEnabled,
+            hapticsEnabled = hapticsEnabled,
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        reminderDao.upsertUserProfile(updated)
+        return updated
+    }
+
+    override suspend fun selectAppTheme(theme: NookiAppTheme): UserProfileEntity {
+        val existing = reminderDao.getUserProfile() ?: UserProfileEntity()
+        val updated = existing.copy(
+            selectedThemeId = theme.id,
+            updatedAtMillis = System.currentTimeMillis()
+        )
+        reminderDao.upsertUserProfile(updated)
+        return updated
+    }
+
+    override suspend fun recordJournalMilestone(
+        milestoneType: PetMilestoneType,
+        title: String,
+        narrative: String,
+        badgeEmoji: String,
+        happinessSnapshot: Int,
+        streakSnapshot: Int,
+        timestampMillis: Long
+    ): PetJournalEntryEntity {
+        val draft = PetJournalEntryEntity(
+            milestoneType = milestoneType,
+            title = title.trim(),
+            narrative = narrative.trim(),
+            badgeEmoji = badgeEmoji.ifBlank { milestoneType.defaultBadgeEmoji },
+            happinessSnapshot = happinessSnapshot.coerceIn(0, 100),
+            streakSnapshot = streakSnapshot.coerceAtLeast(0),
+            timestampMillis = timestampMillis
+        )
+        val generatedId = reminderDao.insertJournalEntry(draft)
+        return draft.copy(id = generatedId)
+    }
+
+    override suspend fun deleteJournalEntry(id: Long) {
+        reminderDao.deleteJournalEntryById(id)
+    }
+
+    override suspend fun syncConsistencyStreakInProfile(
+        currentStreakDays: Int,
+        longestStreakDays: Int,
+        lastCompletedDayEpoch: Long
+    ) {
+        val existing = reminderDao.getUserProfile()
+        if (existing == null) {
+            reminderDao.upsertUserProfile(
+                UserProfileEntity(
+                    currentStreakDays = currentStreakDays,
+                    longestStreakDays = longestStreakDays,
+                    lastCompletedDayEpoch = lastCompletedDayEpoch
+                )
+            )
+        } else if (
+            existing.currentStreakDays != currentStreakDays ||
+            existing.longestStreakDays != longestStreakDays ||
+            existing.lastCompletedDayEpoch != lastCompletedDayEpoch
+        ) {
+            reminderDao.updateStreakStats(
+                currentStreakDays = currentStreakDays,
+                longestStreakDays = maxOf(existing.longestStreakDays, longestStreakDays),
+                lastCompletedDayEpoch = lastCompletedDayEpoch
+            )
+        }
+    }
+
     override suspend fun seedStarterRemindersIfEmpty() {
-        if (reminderDao.getReminderCount() > 0) return
         val now = System.currentTimeMillis()
+        if (reminderDao.getUserProfile() == null) {
+            val yesterdayEpoch = ConsistencyStreakCalculator.toLocalDayEpoch(now - 86_400_000L)
+            reminderDao.upsertUserProfile(
+                UserProfileEntity(
+                    displayName = "Aarav",
+                    companionTitle = "Keeper of the Thread",
+                    avatarBadge = "🦊",
+                    bioMotto = "One thread, calm mind • English, हिंग्लिश & हिंदी",
+                    dailyReminderGoal = 3,
+                    currentStreakDays = 2,
+                    longestStreakDays = 5,
+                    lastCompletedDayEpoch = yesterdayEpoch,
+                    selectedThemeId = NookiAppTheme.MIDNIGHT_COZY.id,
+                    updatedAtMillis = now
+                )
+            )
+        }
+
+        if (reminderDao.getJournalEntryCount() == 0) {
+            recordJournalMilestone(
+                milestoneType = PetMilestoneType.BONDING_MOMENT,
+                title = "Nooki Arrived on the Desk Island",
+                narrative = "Nooki unrolled the single continuous thread and promised nothing would quietly disappear.",
+                badgeEmoji = "🦊",
+                happinessSnapshot = 72,
+                streakSnapshot = 1,
+                timestampMillis = now - 72 * 3_600_000L
+            )
+            recordJournalMilestone(
+                milestoneType = PetMilestoneType.PERSONALITY_SHIFT,
+                title = "Pet Personality Shift: Warm & Content",
+                narrative = "After untying evening knots on time, Nooki's ears perked up (+8°) and orbital fireflies began circling.",
+                badgeEmoji = "✨",
+                happinessSnapshot = 84,
+                streakSnapshot = 2,
+                timestampMillis = now - 26 * 3_600_000L
+            )
+            recordJournalMilestone(
+                milestoneType = PetMilestoneType.FIRST_HIGH_STREAK,
+                title = "First High-Streak Achievement (5-Day Thread)",
+                narrative = "Five consecutive days of completed scheduled reminders! Nooki celebrated with a 360° 3D play hop.",
+                badgeEmoji = "🔥",
+                happinessSnapshot = 95,
+                streakSnapshot = 5,
+                timestampMillis = now - 6 * 3_600_000L
+            )
+        }
+
+        if (reminderDao.getReminderCount() > 0) return
 
         // 1. "What did I miss?" (Sindoor Vermilion knot)
         val missedCallDraft = ReminderEntity(
@@ -356,6 +580,41 @@ class ReminderRepositoryImpl(
         )
         saveParsedBreathCapture(
             NookiBreathParser.parse("Pay rent on the 1st every month", now)
+        )
+
+        // 4. Done tasks from the past 2 consecutive days so the Consistency Streak & Done Tasks
+        // section are immediately populated and verifiable on first launch
+        val yesterdayMillis = now - 24 * 3_600_000L
+        val twoDaysAgoMillis = now - 48 * 3_600_000L
+        reminderDao.upsertReminder(
+            ReminderEntity(
+                title = "Morning walk & stretch",
+                notes = "KIND:REMINDER | Completed yesterday",
+                rawInput = "morning walk",
+                triggerAtMillis = yesterdayMillis - 1_800_000L,
+                createdAtMillis = yesterdayMillis - 3_600_000L,
+                completedAtMillis = yesterdayMillis,
+                completedDayEpoch = ConsistencyStreakCalculator.toLocalDayEpoch(yesterdayMillis),
+                priority = ReminderPriority.MEDIUM,
+                category = ReminderCategory.STRETCH,
+                status = ReminderStatus.COMPLETED,
+                petMoodImpact = 15
+            )
+        )
+        reminderDao.upsertReminder(
+            ReminderEntity(
+                title = "Pay electricity bill",
+                notes = "KIND:REMINDER | Completed 2 days ago",
+                rawInput = "pay electricity bill",
+                triggerAtMillis = twoDaysAgoMillis - 1_800_000L,
+                createdAtMillis = twoDaysAgoMillis - 3_600_000L,
+                completedAtMillis = twoDaysAgoMillis,
+                completedDayEpoch = ConsistencyStreakCalculator.toLocalDayEpoch(twoDaysAgoMillis),
+                priority = ReminderPriority.HIGH,
+                category = ReminderCategory.ERRAND,
+                status = ReminderStatus.COMPLETED,
+                petMoodImpact = 20
+            )
         )
     }
 }
