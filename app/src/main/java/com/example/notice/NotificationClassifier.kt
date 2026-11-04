@@ -106,7 +106,10 @@ object NotificationClassifier {
         if (combined.isEmpty()) return null
         if (SECRET.containsMatchIn(combined)) return null
 
-        missedCall(notice, combined, nowMillis)?.let { return it }
+        // A call notification is only ever a call, even when it names nobody useful.
+        if (notice.category == "missed_call" || MISSED_CALL_TEXT.containsMatchIn(combined)) {
+            return missedCall(notice, nowMillis)
+        }
         if (ALREADY_DONE.containsMatchIn(combined) || MARKETING.containsMatchIn(combined)) {
             return unreadMessage(notice, nowMillis)
         }
@@ -120,8 +123,7 @@ object NotificationClassifier {
     fun messageKey(notice: IncomingNotice): String? =
         messagePerson(notice)?.let { key(NoticedType.UNREAD_MESSAGE, notice.packageName, it) }
 
-    private fun missedCall(notice: IncomingNotice, combined: String, nowMillis: Long): NoticedCandidate? {
-        if (notice.category != "missed_call" && !MISSED_CALL_TEXT.containsMatchIn(combined)) return null
+    private fun missedCall(notice: IncomingNotice, nowMillis: Long): NoticedCandidate? {
         val titleSaysMissed = MISSED_CALL_TEXT.containsMatchIn(notice.title)
         val raw = (if (titleSaysMissed) notice.text else notice.title).trim()
         // "3 missed calls" with no name tells Nooki nothing it can act on.

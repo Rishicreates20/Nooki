@@ -13,6 +13,8 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -44,3 +46,8 @@ jobs:
           path: emulator-shots
           if-no-files-found: warn
           retention-days: 14
+      - name: Publish what the emulator showed
+        if: always()
+        env:
+          TOKEN: ${{ github.token }}
+        run: bash tools/ci/publish_branch.sh ci-emulator-shots emulator-shots

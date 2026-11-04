@@ -69,6 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     continue-on-error: true
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -85,3 +87,11 @@ jobs:
           path: app/build/nooki-shots
           if-no-files-found: warn
           retention-days: 14
+      - name: Publish rendered screens and the database schema
+        if: always() && github.ref_name != 'main'
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/build/nooki-shots
+          cp -r app/schemas app/build/nooki-shots/schemas || true
+          bash tools/ci/publish_branch.sh ci-rendered-screens app/build/nooki-shots

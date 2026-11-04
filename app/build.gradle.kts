@@ -131,16 +131,13 @@ android {
   testOptions {
     unitTests {
       isIncludeAndroidResources = true
+      // Screenshot tests skip themselves unless asked for: ./gradlew testDebugUnitTest -Pscreenshots
+      val wantScreenshots = project.hasProperty("screenshots").toString()
       all {
-        // Screenshot tests only run when asked for: ./gradlew testDebugUnitTest -Pscreenshots
+        it.systemProperty("nooki.screenshots", wantScreenshots)
         it.systemProperty("roborazzi.test.record", "true")
-        it.systemProperty("roborazzi.record.filePathStrategy", "relativePathFromCurrentDirectory")
       }
     }
-  }
-  // Keeping the screenshot tests and their tools apart means a problem there can never block an APK.
-  if (project.hasProperty("screenshots")) {
-    sourceSets.getByName("test").java.srcDir("src/screenshots/java")
   }
   dependenciesInfo {
     includeInApk = false
@@ -212,10 +209,8 @@ dependencies {
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
-  if (project.hasProperty("screenshots")) {
-    testImplementation(libs.roborazzi)
-    testImplementation(libs.roborazzi.compose)
-  }
+  testImplementation(libs.roborazzi)
+  testImplementation(libs.roborazzi.compose)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)

@@ -31,6 +31,8 @@ import com.example.settings.Persona
 import com.example.ui.theme.NookiPalette
 import com.example.ui.theme.NookiTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -44,6 +46,11 @@ import org.robolectric.annotation.GraphicsMode
 class ScreenshotTest {
 
     private val now = System.currentTimeMillis()
+
+    @Before
+    fun onlyWhenAsked() {
+        assumeTrue(System.getProperty("nooki.screenshots") == "true")
+    }
 
     private fun state(tab: NookiTab, empty: Boolean = false): NookiUiState {
         val reminders = if (empty) emptyList() else SampleDay.reminders(now)

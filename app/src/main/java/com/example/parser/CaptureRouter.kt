@@ -80,7 +80,7 @@ object CaptureRouter {
         EXPLICIT_NOTE.matchEntire(line)?.let { m ->
             val body = m.groupValues[1].trim()
             val placed = matchHold(body)
-            return Capture.Hold(placed?.copy(text = body) ?: MemoryDraft(sentence(body), "", ""))
+            return Capture.Hold(placed?.copy(text = sentence(body)) ?: MemoryDraft(sentence(body), "", ""))
         }
 
         val parsed = ReminderTextParser.parse(line, nowMillis, timeZone)

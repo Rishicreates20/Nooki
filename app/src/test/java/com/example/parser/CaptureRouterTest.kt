@@ -43,7 +43,7 @@ class CaptureRouterTest {
     @Test
     fun `plain note`() {
         assertEquals("Wifi name is NookiNet", hold("note: wifi name is NookiNet").draft.text)
-        assertEquals("the shop closes on tuesdays", hold("remember that the shop closes on tuesdays").draft.text)
+        assertEquals("The shop closes on tuesdays", hold("remember that the shop closes on tuesdays").draft.text)
     }
 
     @Test

@@ -47,38 +47,57 @@ shot 04_nooki
 adb shell input tap $((W / 6)) $TAB_Y
 sleep 2
 
-# Real notifications, sent from the shell.
-adb shell cmd notification post -S bigtext -t "Missed call" call1 "Sharma uncle"
-adb shell cmd notification post -S bigtext -t "Your electricity bill" bill1 "Rs. 1240 is due on 28 Dec 2026"
-adb shell cmd notification post -S bigtext -t "HDFC Bank" otp1 "Your OTP is 918273. Do not share it."
-adb shell cmd notification post -S bigtext -t "Bank" bal1 "Rs.2000 debited from a/c XX4411. Avl Bal Rs.777123"
-sleep 4
-shot 05_noticed_shade_closed
+# Real notifications, sent from the shell. The whole command is one quoted string because adb
+# joins its arguments with spaces, which would otherwise split "Missed call" into two words.
+post() { adb shell "cmd notification post -S bigtext -t '$1' '$2' '$3'"; }
+post "Missed call" call1 "Sharma uncle"
+post "Your electricity bill" bill1 "Rs. 1240 is due on 28 Dec 2026"
+post "HDFC Bank" otp1 "Your OTP is 918273. Do not share it."
+post "Bank" bal1 "Rs.2000 debited from a/c XX4411. Avl Bal Rs.777123"
+sleep 5
+adb shell dumpsys notification --noredact | grep -E "android.title=|android.text=" | tail -12
+shot 05_after_notifications
+
+# Look at the real database files for what was and was not kept. Sample data must be found first,
+# or "no trace" would prove nothing.
+sleep 2
+adb exec-out "run-as $PKG cat databases/nooki_desk_pet.db" > "$OUT/db.bin"
+adb exec-out "run-as $PKG cat databases/nooki_desk_pet.db-wal" >> "$OUT/db.bin"
+ls -la "$OUT/db.bin"
+if LC_ALL=C grep -aq 'Passport is in the blue bag' "$OUT/db.bin"; then
+  pass "the database could be read"
+  LC_ALL=C grep -aq 'Sharma uncle' "$OUT/db.bin" && pass "missed call was noticed" || fail "missed call not in the database"
+  LC_ALL=C grep -aqi 'Electricity bill' "$OUT/db.bin" && pass "bill was noticed" || fail "bill not in the database"
+  LC_ALL=C grep -aq '918273' "$OUT/db.bin" && fail "OTP reached the database" || pass "OTP left no trace"
+  LC_ALL=C grep -aq '777123' "$OUT/db.bin" && fail "bank balance reached the database" || pass "bank balance left no trace"
+else
+  fail "could not read the database, so nothing about it was proven"
+fi
+rm -f "$OUT/db.bin"
 
 adb shell am force-stop $PKG
 adb shell am start -W -n $ACTIVITY >/dev/null
 sleep 6
 shot 06_today_after_notifications
 
-# Look at the real database files for what was and was not kept.
-adb exec-out run-as $PKG sh -c 'cat databases/nooki_desk_pet.db databases/nooki_desk_pet.db-wal 2>/dev/null' > "$OUT/db.bin" || true
-if [ -s "$OUT/db.bin" ]; then
-  LC_ALL=C grep -aq 'Sharma uncle' "$OUT/db.bin" && pass "missed call was noticed" || fail "missed call not in the database"
-  LC_ALL=C grep -aq 'Electricity bill' "$OUT/db.bin" && pass "bill was noticed" || fail "bill not in the database"
-  LC_ALL=C grep -aq '918273' "$OUT/db.bin" && fail "OTP reached the database" || pass "OTP left no trace"
-  LC_ALL=C grep -aq '777123' "$OUT/db.bin" && fail "bank balance reached the database" || pass "bank balance left no trace"
-else
-  fail "could not read the database"
-fi
-rm -f "$OUT/db.bin"
-
-# A real alarm: tell the app through its own share path, then watch it ring.
-adb shell am start -W -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "'test ring in 1 minute'" -n $ACTIVITY >/dev/null
+# A real reminder, saved through the share path, must ring.
+share() { adb shell "am start -W -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT '$1' -n $ACTIVITY" >/dev/null; }
+share "Ring test in 1 minute"
 sleep 4
 shot 07_capture_from_share
 adb shell input keyevent KEYCODE_ENTER
 sleep 3
 shot 08_after_save
+FOUND=0
+for _ in $(seq 1 26); do
+  if adb shell dumpsys notification --noredact | grep -q "Ring test"; then FOUND=1; break; fi
+  sleep 5
+done
+[ "$FOUND" = 1 ] && pass "a saved reminder rang" || fail "the reminder did not ring"
+adb shell cmd statusbar expand-notifications
+sleep 3
+shot 09_notification
+adb shell cmd statusbar collapse
 
 adb logcat -d -t 4000 > "$OUT/logcat.txt"
 if grep -E "FATAL EXCEPTION|AndroidRuntime: *Process: $PKG" "$OUT/logcat.txt" >/dev/null; then
@@ -88,9 +107,26 @@ else
   pass "no crashes"
 fi
 
-# Reboot-style recovery: the system broadcast must reach the receiver and not crash it.
-adb shell am broadcast -a android.intent.action.MY_PACKAGE_REPLACED -n $PKG/com.example.scheduler.receiver.BootCompletedReceiver || true
+# Reboot for real, with a reminder waiting: it has to come back and ring.
+share "Reboot test in 3 minutes"
+sleep 4
+adb shell input keyevent KEYCODE_ENTER
 sleep 3
-adb logcat -d -t 400 | grep -E "FATAL EXCEPTION" && fail "boot recovery crashed" || pass "boot recovery ran"
+adb reboot
+adb wait-for-device
+for _ in $(seq 1 60); do
+  [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break
+  sleep 5
+done
+pass "phone rebooted"
+FOUND=0
+for _ in $(seq 1 60); do
+  if adb shell dumpsys notification --noredact 2>/dev/null | grep -q "Reboot test"; then FOUND=1; break; fi
+  sleep 5
+done
+[ "$FOUND" = 1 ] && pass "the reminder survived a reboot and rang" || fail "the reminder did not survive a reboot"
+shot 10_after_reboot
+adb logcat -d -t 1500 > "$OUT/logcat_after_reboot.txt"
+grep -q "FATAL EXCEPTION" "$OUT/logcat_after_reboot.txt" && fail "crash after reboot" || pass "no crash after reboot"
 
 exit $FAILED
