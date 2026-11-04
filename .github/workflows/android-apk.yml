@@ -22,7 +22,8 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
+      # GitHub's ubuntu runners ship the Android SDK (ANDROID_HOME) with licenses accepted;
+      # AGP downloads the exact platform it needs.
 
       - uses: gradle/actions/setup-gradle@v4
 
