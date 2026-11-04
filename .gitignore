@@ -16,3 +16,7 @@
 local.properties
 .env
 debug.keystore
+# Release signing secrets (see keystore.properties.example)
+keystore.properties
+*.jks
+*.keystore
