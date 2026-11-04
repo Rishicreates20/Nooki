@@ -47,6 +47,7 @@ import io.github.sceneview.rememberEnvironment
 import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberOnGestureListener
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -141,6 +142,7 @@ fun NookiPet3D(
     val hop = remember { Animatable(0f) }         // world units on Y
     val spin = remember { Animatable(0f) }        // degrees on Y
     var reacting by remember { mutableStateOf(false) }
+    var reactionJob by remember { mutableStateOf<Job?>(null) }
 
     fun react() {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -157,7 +159,9 @@ fun NookiPet3D(
             spin.animateTo(spin.targetValue + 360f, spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessLow))
             spin.snapTo(spin.value % 360f)
         }
-        scope.launch {
+        // Restart the reaction window on every tap so an earlier timer can't end a newer one.
+        reactionJob?.cancel()
+        reactionJob = scope.launch {
             delay(1_800L)
             reacting = false
         }

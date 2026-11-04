@@ -435,7 +435,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     repo = os.path.abspath(os.path.join(here, "..", ".."))
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(repo, "app", "src", "main", "assets", "models", "nooki.glb")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     g, root = build()
     size = g.write_glb(out, [root])
     print(f"Wrote {out} ({size / 1024:.1f} KiB, {len(g.nodes)} nodes, {len(g.animations)} animations: "
