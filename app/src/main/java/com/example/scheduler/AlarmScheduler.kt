@@ -20,13 +20,13 @@ import java.util.Locale
  * Clean Architecture contract for scheduling and cancelling exact OS-level alarms
  * via [AlarmManager] for Nooki reminders.
  */
-interface AlarmScheduler {
-    fun canScheduleExactAlarms(): Boolean
+interface AlarmScheduler : ExactAlarmScheduler {
+    override fun canScheduleExactAlarms(): Boolean
     fun schedule(reminder: Reminder): ScheduleResult
-    fun scheduleExact(reminder: ReminderEntity): ScheduleResult
-    fun cancel(reminderId: Long)
+    override fun scheduleExact(reminder: ReminderEntity): ScheduleResult
+    override fun cancel(reminderId: Long)
     fun cancel(reminder: Reminder) = cancel(reminder.id)
-    fun buildExactAlarmPermissionIntent(): Intent?
+    override fun buildExactAlarmPermissionIntent(): Intent?
 }
 
 /**

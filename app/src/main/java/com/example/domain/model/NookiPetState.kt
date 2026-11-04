@@ -22,42 +22,42 @@ enum class NookiPetMood(
     IDLE_COZY(
         stateCode = "STATE_IDLE_COZY",
         displayTitle = "Cozy & Relaxed",
-        defaultSpeech = "Drag to rotate me in 3D, or tap my head for a desk check-in!",
+        defaultSpeech = "Drag to rotate me in 3D, or tap a knot on my thread to untie it!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 1800
     ),
     ATTENTIVE(
         stateCode = "STATE_ATTENTIVE",
-        displayTitle = "Focused & Watching Clock",
-        defaultSpeech = "I'm keeping an eye on your upcoming desk reminders!",
+        displayTitle = "Focused & Watching Thread",
+        defaultSpeech = "I'm keeping an eye on your upcoming reminders!",
         primaryAuraColor = NookiSkyInfo,
         breathingSpeedMs = 1350
     ),
     EXCITED_RINGING(
         stateCode = "STATE_RINGING_ALERT",
-        displayTitle = "RINGING DESK BELL!",
-        defaultSpeech = "Ding-ding! Your desk reminder is ringing right now!",
+        displayTitle = "RINGING RIGHT NOW!",
+        defaultSpeech = "Ding-ding! Your reminder is ringing right now!",
         primaryAuraColor = NookiCoralAccent,
         breathingSpeedMs = 320
     ),
     WORRIED_OVERDUE(
-        stateCode = "STATE_GRUMPY_OVERDUE",
-        displayTitle = "Worried (Overdue Task)",
-        defaultSpeech = "Uh oh... we have an overdue task waiting on the desk!",
+        stateCode = "STATE_FLUSTERED_MISSED",
+        displayTitle = "Flustered (You Missed Items)",
+        defaultSpeech = "A few things piled up in 'You missed' — let's untie a knot together!",
         primaryAuraColor = NookiAmberLight,
         breathingSpeedMs = 860
     ),
     CELEBRATING_XP(
         stateCode = "STATE_CELEBRATING_XP",
-        displayTitle = "Happy & Energized!",
-        defaultSpeech = "Yay! Great job finishing your task! +XP power-up!",
+        displayTitle = "Radiant & Energized!",
+        defaultSpeech = "Yay! Great job untying that knot! +XP care boost!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 460
     ),
     SLEEPING(
         stateCode = "STATE_SLEEPING",
-        displayTitle = "Dozy Desk Nap",
-        defaultSpeech = "Zzz... All tasks complete. Tap me to wake me up!",
+        displayTitle = "Peaceful Nap",
+        defaultSpeech = "Zzz... Everything is calm and taken care of.",
         primaryAuraColor = NookiMutedLavender,
         breathingSpeedMs = 2400
     )
@@ -66,7 +66,7 @@ enum class NookiPetMood(
 /**
  * Strongly-typed sealed state hierarchy representing Nooki's reactive state machine nodes.
  * Every emission from Room's `Flow<List<ReminderEntity>>` deterministically resolves to one
- * of these states.
+ * of these states alongside a calculated [MoodState].
  */
 sealed interface NookiPetState {
     val mood: NookiPetMood
@@ -74,16 +74,18 @@ sealed interface NookiPetState {
     val dbTriggerSummary: String
 
     data class IdleCozy(
+        val happinessScore: Int = 75,
         override val speechText: String = NookiPetMood.IDLE_COZY.defaultSpeech,
-        override val dbTriggerSummary: String = "0 active rows, 0 completed rows in Room"
+        override val dbTriggerSummary: String = "Calm • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.IDLE_COZY
     }
 
     data class Sleeping(
         val completedTotal: Int,
-        override val speechText: String = "Zzz... All $completedTotal desk task(s) finished! Tap me or add a reminder!",
-        override val dbTriggerSummary: String = "0 active rows, $completedTotal COMPLETED in Room"
+        val happinessScore: Int,
+        override val speechText: String = "Zzz... All $completedTotal knot(s) untied! Happiness at $happinessScore%.",
+        override val dbTriggerSummary: String = "0 active rows, $completedTotal COMPLETED • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.SLEEPING
     }
@@ -92,8 +94,9 @@ sealed interface NookiPetState {
         val nextReminder: ReminderEntity,
         val activeCount: Int,
         val millisRemaining: Long,
+        val happinessScore: Int,
         override val speechText: String,
-        override val dbTriggerSummary: String = "$activeCount SCHEDULED/SNOOZED in Room (Next: #${nextReminder.id})"
+        override val dbTriggerSummary: String = "$activeCount active in Room (Next: #${nextReminder.id}) • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.ATTENTIVE
     }
@@ -101,8 +104,8 @@ sealed interface NookiPetState {
     data class RingingAlert(
         val ringingReminder: ReminderEntity,
         val totalRingingCount: Int,
-        override val speechText: String = "🔔 '${ringingReminder.title}' is ringing! Complete it for +${ringingReminder.petMoodImpact} XP!",
-        override val dbTriggerSummary: String = "$totalRingingCount row(s) with status=RINGING in Room (#${ringingReminder.id})"
+        override val speechText: String = "🔔 '${ringingReminder.title}' is ringing! Untie the knot for +${ringingReminder.petMoodImpact} XP!",
+        override val dbTriggerSummary: String = "$totalRingingCount row(s) RINGING in Room (#${ringingReminder.id})"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.EXCITED_RINGING
     }
@@ -110,26 +113,137 @@ sealed interface NookiPetState {
     data class WorriedOverdue(
         val overdueReminder: ReminderEntity,
         val overdueCount: Int,
-        override val speechText: String = "🐾 '${overdueReminder.title}' is overdue! Let's complete or snooze it!",
-        override val dbTriggerSummary: String = "$overdueCount overdue/MISSED row(s) in Room (#${overdueReminder.id})"
+        val happinessScore: Int,
+        override val speechText: String = "🐾 '${overdueReminder.title}' is in 'You missed' ($overdueCount open). Tap its knot to untie it!",
+        override val dbTriggerSummary: String = "$overdueCount row(s) in 'You missed' • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.WORRIED_OVERDUE
     }
 
     data class CelebratingXp(
         val earnedXp: Int,
+        val happinessScore: Int,
         override val speechText: String,
-        override val dbTriggerSummary: String = "Room status updated -> +$earnedXp XP celebration window"
+        override val dbTriggerSummary: String = "Knot untied (+$earnedXp XP) • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.CELEBRATING_XP
     }
 }
 
 /**
- * Pure, deterministic state machine reducer that evaluates Room database snapshots
- * and real-time clock ticks into a [NookiPetState].
+ * Combined output of [NookiStateMachine.reduceWithMood], pairing the discrete [NookiPetState]
+ * node with the continuous completion-frequency [MoodState].
+ */
+data class NookiStateMachineOutput(
+    val petState: NookiPetState,
+    val moodState: MoodState
+)
+
+/**
+ * Pure, deterministic state machine reducer that evaluates Room database snapshots,
+ * reminder completion frequency, and real-time clock ticks into a [NookiStateMachineOutput].
  */
 object NookiStateMachine {
+
+    fun reduceWithMood(
+        allReminders: List<ReminderEntity>,
+        activeReminders: List<ReminderEntity>,
+        completedCount: Int,
+        nowMillis: Long,
+        celebratingUntilMillis: Long,
+        celebrationSpeech: String?,
+        lastEarnedXp: Int,
+        bonusPetTouches: Int = 0
+    ): NookiStateMachineOutput {
+        val ringingList = allReminders.filter { it.status == ReminderStatus.RINGING }
+        val overdueList = allReminders.filter { item ->
+            item.status != ReminderStatus.COMPLETED &&
+                item.status != ReminderStatus.CANCELLED &&
+                item.status != ReminderStatus.RINGING &&
+                !isHeldOrMoneyNote(item) &&
+                (item.status == ReminderStatus.MISSED || item.triggerAtMillis < nowMillis)
+        }
+
+        // First determine preliminary pet mood so MoodStateCalculator can align its tier
+        val preliminaryMood = when {
+            ringingList.isNotEmpty() -> NookiPetMood.EXCITED_RINGING
+            nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank() -> NookiPetMood.CELEBRATING_XP
+            overdueList.isNotEmpty() -> NookiPetMood.WORRIED_OVERDUE
+            activeReminders.isNotEmpty() -> NookiPetMood.ATTENTIVE
+            completedCount > 0 -> NookiPetMood.SLEEPING
+            else -> NookiPetMood.IDLE_COZY
+        }
+
+        val moodState = MoodStateCalculator.compute(
+            allReminders = allReminders,
+            nowMillis = nowMillis,
+            bonusPetTouches = bonusPetTouches,
+            resolvedPetMood = preliminaryMood
+        )
+
+        val petState: NookiPetState = when {
+            ringingList.isNotEmpty() -> {
+                NookiPetState.RingingAlert(
+                    ringingReminder = ringingList.first(),
+                    totalRingingCount = ringingList.size
+                )
+            }
+
+            nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank() -> {
+                NookiPetState.CelebratingXp(
+                    earnedXp = lastEarnedXp,
+                    happinessScore = moodState.happinessScore,
+                    speechText = celebrationSpeech
+                )
+            }
+
+            overdueList.isNotEmpty() -> {
+                NookiPetState.WorriedOverdue(
+                    overdueReminder = overdueList.first(),
+                    overdueCount = overdueList.size,
+                    happinessScore = moodState.happinessScore
+                )
+            }
+
+            activeReminders.isNotEmpty() -> {
+                val nextReminder = activeReminders.first()
+                val remaining = (nextReminder.triggerAtMillis - nowMillis).coerceAtLeast(0L)
+                val mins = remaining / 60_000L
+                val secs = (remaining % 60_000L) / 1_000L
+                val speech = when {
+                    mins == 0L -> "Almost time! '${nextReminder.title}' rings in ${secs}s!"
+                    mins < 60L -> "Looking up — '${nextReminder.title}' is in ${mins}m ${secs}s."
+                    else -> "${moodState.happinessTier.badgeEmoji} ${moodState.careMessage} Next: '${nextReminder.title}'"
+                }
+                NookiPetState.Attentive(
+                    nextReminder = nextReminder,
+                    activeCount = activeReminders.size,
+                    millisRemaining = remaining,
+                    happinessScore = moodState.happinessScore,
+                    speechText = speech
+                )
+            }
+
+            completedCount > 0 -> {
+                NookiPetState.Sleeping(
+                    completedTotal = completedCount,
+                    happinessScore = moodState.happinessScore
+                )
+            }
+
+            else -> {
+                NookiPetState.IdleCozy(
+                    happinessScore = moodState.happinessScore,
+                    speechText = moodState.careMessage
+                )
+            }
+        }
+
+        return NookiStateMachineOutput(
+            petState = petState,
+            moodState = moodState.copy(petMood = petState.mood)
+        )
+    }
 
     fun reduce(
         allReminders: List<ReminderEntity>,
@@ -139,63 +253,20 @@ object NookiStateMachine {
         celebratingUntilMillis: Long,
         celebrationSpeech: String?,
         lastEarnedXp: Int
-    ): NookiPetState {
-        val ringingList = allReminders.filter { it.status == ReminderStatus.RINGING }
-        val overdueList = allReminders.filter {
-            it.isOverdue(nowMillis) &&
-                it.status != ReminderStatus.COMPLETED &&
-                it.status != ReminderStatus.CANCELLED
-        }
+    ): NookiPetState = reduceWithMood(
+        allReminders = allReminders,
+        activeReminders = activeReminders,
+        completedCount = completedCount,
+        nowMillis = nowMillis,
+        celebratingUntilMillis = celebratingUntilMillis,
+        celebrationSpeech = celebrationSpeech,
+        lastEarnedXp = lastEarnedXp
+    ).petState
 
-        // Priority 1: Active ringing alarm in Room always takes highest priority
-        if (ringingList.isNotEmpty()) {
-            return NookiPetState.RingingAlert(
-                ringingReminder = ringingList.first(),
-                totalRingingCount = ringingList.size
-            )
-        }
-
-        // Priority 2: Active XP celebration window (e.g. right after Room marks a task COMPLETED)
-        if (nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank()) {
-            return NookiPetState.CelebratingXp(
-                earnedXp = lastEarnedXp,
-                speechText = celebrationSpeech
-            )
-        }
-
-        // Priority 3: Overdue or MISSED reminders in Room
-        if (overdueList.isNotEmpty()) {
-            return NookiPetState.WorriedOverdue(
-                overdueReminder = overdueList.first(),
-                overdueCount = overdueList.size
-            )
-        }
-
-        // Priority 4: Scheduled / Snoozed reminders in Room
-        val nextReminder = activeReminders.firstOrNull()
-        if (nextReminder != null) {
-            val remaining = (nextReminder.triggerAtMillis - nowMillis).coerceAtLeast(0L)
-            val mins = remaining / 60_000L
-            val secs = (remaining % 60_000L) / 1_000L
-            val speech = when {
-                mins == 0L -> "Almost time! '${nextReminder.title}' rings in ${secs}s!"
-                mins < 60L -> "Next reminder in ${mins}m ${secs}s: '${nextReminder.title}'"
-                else -> "Watching ${activeReminders.size} alarm(s). Next: '${nextReminder.title}'"
-            }
-            return NookiPetState.Attentive(
-                nextReminder = nextReminder,
-                activeCount = activeReminders.size,
-                millisRemaining = remaining,
-                speechText = speech
-            )
-        }
-
-        // Priority 5: All tasks completed -> Nooki naps peacefully
-        if (completedCount > 0) {
-            return NookiPetState.Sleeping(completedTotal = completedCount)
-        }
-
-        // Default: Idle Cozy
-        return NookiPetState.IdleCozy()
+    private fun isHeldOrMoneyNote(item: ReminderEntity): Boolean {
+        return item.notes.contains("KIND:HELD_MEMORY") ||
+            item.notes.contains("KIND:MONEY_OWED_TO_ME") ||
+            item.notes.contains("KIND:MONEY_I_OWE") ||
+            item.notes.contains("KIND:ITEM_LENT")
     }
 }

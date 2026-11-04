@@ -3,7 +3,7 @@ package com.example.scheduler.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.data.local.database.NookiDatabase
+import com.example.data.local.database.AppDatabase
 import com.example.data.repository.ReminderRepositoryImpl
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
@@ -14,8 +14,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * BroadcastReceiver handling notification actions (Complete, Snooze 5m, Dismiss)
- * without requiring the user to open the full activity first.
+ * BroadcastReceiver handling notification actions (Complete, Snooze 5m, Swiped Away / Dismiss).
+ * Enforces "5. Nothing quietly disappears":
+ * - Swiping away a notification does NOT mean it is done. It moves to "You missed" (MISSED),
+ *   and if it's Medicine (up to 3 asks), it asks again in 10 minutes before staying in "You missed".
  */
 class ReminderActionReceiver : BroadcastReceiver() {
 
@@ -30,7 +32,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val database = NookiDatabase.getInstance(appContext)
+                val database = AppDatabase.getInstance(appContext)
                 val scheduler = AndroidExactAlarmScheduler(appContext)
                 val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
 
@@ -40,7 +42,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
                         NotificationHelper.cancelNotification(appContext, reminderId)
                         NookiSchedulerTelemetry.record(
                             source = "ReminderActionReceiver",
-                            message = "Completed reminder #$reminderId ('${completed?.title ?: ""}') via action receiver (+${completed?.petMoodImpact ?: 10} XP)"
+                            message = "Untied knot #$reminderId ('${completed?.title ?: ""}') -> Done (+${completed?.petMoodImpact ?: 10} XP)"
                         )
                     }
 
@@ -49,16 +51,17 @@ class ReminderActionReceiver : BroadcastReceiver() {
                         NotificationHelper.cancelNotification(appContext, reminderId)
                         NookiSchedulerTelemetry.record(
                             source = "ReminderActionReceiver",
-                            message = "Snoozed reminder #$reminderId for $snoozeMinutes mins (snoozeCount=${snoozed?.first?.snoozeCount ?: 1})"
+                            message = "Snoozed reminder #$reminderId for $snoozeMinutes mins (ask #${snoozed?.first?.snoozeCount ?: 1})"
                         )
                     }
 
                     AndroidExactAlarmScheduler.ACTION_DISMISS_REMINDER -> {
+                        // "Swiping away a notification does not mean it is done. It moves to 'You missed'."
                         repository.dismissReminder(reminderId)
                         NotificationHelper.cancelNotification(appContext, reminderId)
                         NookiSchedulerTelemetry.record(
                             source = "ReminderActionReceiver",
-                            message = "Dismissed reminder #$reminderId"
+                            message = "Notification swiped away for #$reminderId -> Moved to 'You missed' (never silently disappears)"
                         )
                     }
                 }

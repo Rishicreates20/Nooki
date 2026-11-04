@@ -8,14 +8,20 @@ import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
 import com.example.data.repository.ReminderRepository
+import com.example.domain.model.HappinessTier
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiStateMachine
+import com.example.domain.notice.NookiNoticeFilter
+import com.example.domain.notice.NoticeFilterSettings
+import com.example.domain.notice.NoticeInspectionResult
+import com.example.domain.notice.NoticeSourceKind
+import com.example.domain.parser.NookiBreathParser
+import com.example.domain.parser.NookiCaptureKind
 import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskSideEffect
 import com.example.presentation.mvi.DeskUiState
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
-import com.example.scheduler.ScheduleResult
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -32,9 +38,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Reactive MVI ViewModel powered by Kotlin [StateFlow].
- * Combines Room database flows (`allReminders`, `activeReminders`, `completedCount`, `totalEarnedXp`)
- * with real-time clock ticks and interaction state through [NookiStateMachine.reduce] so that any
- * Room table mutation immediately updates the UI and centered 3D Nooki model.
+ * Expands the reactive state machine with [com.example.domain.model.MoodState] so Nooki's
+ * happiness score, tier (`RADIANT`, `CONTENT`, `CALM`, `SLEEPY_PEACEFUL`, `FLUSTERED`),
+ * and 3D posture respond dynamically to reminder completion frequency in Room.
  */
 class DeskPetViewModel(
     private val repository: ReminderRepository,
@@ -43,12 +49,29 @@ class DeskPetViewModel(
 
     private data class EphemeralInteractionState(
         val nowMillis: Long = System.currentTimeMillis(),
+        val breathInputText: String = "",
         val celebratingUntilMillis: Long = 0L,
         val celebrationSpeech: String? = null,
         val lastEarnedXp: Int = 0,
         val petInteractionCombo: Int = 0,
         val bonusPetXp: Int = 0,
         val isAutoRotate3DEnabled: Boolean = true,
+        val noticeSettings: NoticeFilterSettings = NoticeFilterSettings(),
+        val noticeSuggestions: List<NoticeInspectionResult.SafeSuggestion> = listOf(
+            NoticeInspectionResult.SafeSuggestion(
+                kind = NoticeSourceKind.UNREAD_MESSAGE,
+                sanitizedTitle = "Unread message from Aman",
+                sanitizedSubtitle = "Message content never stored • Tap to add a knot",
+                timestampMillis = System.currentTimeMillis() - 2 * 3_600_000L
+            ),
+            NoticeInspectionResult.SafeSuggestion(
+                kind = NoticeSourceKind.PARCEL_DELIVERY,
+                sanitizedTitle = "Parcel arriving today",
+                sanitizedSubtitle = "Delivery noticed • Tap to keep on today's thread",
+                timestampMillis = System.currentTimeMillis() - 45 * 60_000L
+            )
+        ),
+        val lastDroppedNoticeAudit: String? = null,
         val isComposerSheetOpen: Boolean = false,
         val isQueueSheetOpen: Boolean = false
     )
@@ -59,11 +82,8 @@ class DeskPetViewModel(
     val sideEffects: Flow<DeskSideEffect> = _sideEffects.receiveAsFlow()
 
     private var lastLoggedMood: NookiPetMood? = null
+    private var lastLoggedHappinessTier: HappinessTier? = null
 
-    /**
-     * Reactive [StateFlow] combining Room DAO flows with ephemeral UI state.
-     * Uses `SharingStarted.WhileSubscribed(5_000L)` for lifecycle-aware collection in Compose.
-     */
     val uiState: StateFlow<DeskUiState> = combine(
         repository.allReminders.distinctUntilChanged(),
         repository.activeReminders.distinctUntilChanged(),
@@ -84,21 +104,72 @@ class DeskPetViewModel(
 
         val now = local.nowMillis
         val ringing = allReminders.filter { it.status == ReminderStatus.RINGING }
-        val overdue = allReminders.filter {
-            it.isOverdue(now) &&
-                it.status != ReminderStatus.COMPLETED &&
-                it.status != ReminderStatus.CANCELLED
+
+        // 1. "You missed" (Vermilion / Sindoor): MISSED status or past-due unacknowledged reminders
+        val youMissed = allReminders.filter { item ->
+            item.status != ReminderStatus.COMPLETED &&
+                item.status != ReminderStatus.CANCELLED &&
+                item.status != ReminderStatus.RINGING &&
+                !isHeldOrMoneyNote(item) &&
+                (item.status == ReminderStatus.MISSED || item.triggerAtMillis < now)
         }
 
-        // Run the pure deterministic State Machine Reducer on the latest Room DB emission
-        val resolvedPetState = NookiStateMachine.reduce(
+        // 2. "What did I forget? & Nooki holds for you" (Marigold)
+        val youForgotAndHeld = allReminders.filter { item ->
+            item.status != ReminderStatus.COMPLETED &&
+                item.status != ReminderStatus.CANCELLED &&
+                item.status != ReminderStatus.RINGING &&
+                item !in youMissed &&
+                (isHeldOrMoneyNote(item) || item.snoozeCount >= 2 || item.notes.contains("WARNS:"))
+        }
+
+        // Running money totals
+        var owedToYouTotal = 0
+        var youOweTotal = 0
+        for (item in allReminders) {
+            if (item.status != ReminderStatus.COMPLETED && item.status != ReminderStatus.CANCELLED) {
+                val amount = extractInrAmount(item.notes)
+                if (amount != null) {
+                    if (item.notes.contains("KIND:MONEY_OWED_TO_ME")) {
+                        owedToYouTotal += amount
+                    } else if (item.notes.contains("KIND:MONEY_I_OWE")) {
+                        youOweTotal += amount
+                    }
+                }
+            }
+        }
+
+        // 3. "Today & coming up" (Neel Indigo)
+        val todayAndComingUp = allReminders.filter { item ->
+            item.status != ReminderStatus.COMPLETED &&
+                item.status != ReminderStatus.CANCELLED &&
+                item.status != ReminderStatus.RINGING &&
+                item !in youMissed &&
+                item !in youForgotAndHeld
+        }
+
+        // Done / Untied knots (Leaf Green)
+        val doneKnots = allReminders.filter { it.status == ReminderStatus.COMPLETED }
+
+        // Evaluate both the discrete NookiPetState and the completion-frequency MoodState
+        val machineOutput = NookiStateMachine.reduceWithMood(
             allReminders = allReminders,
-            activeReminders = activeReminders,
+            activeReminders = todayAndComingUp,
             completedCount = completedCount,
             nowMillis = now,
             celebratingUntilMillis = local.celebratingUntilMillis,
             celebrationSpeech = local.celebrationSpeech,
-            lastEarnedXp = local.lastEarnedXp
+            lastEarnedXp = local.lastEarnedXp,
+            bonusPetTouches = local.petInteractionCombo
+        )
+        val resolvedPetState = machineOutput.petState
+        val resolvedMoodState = machineOutput.moodState
+
+        // Live parse of current one-breath input
+        val liveParsed = NookiBreathParser.parse(
+            rawInput = local.breathInputText,
+            nowMillis = now,
+            existingItems = allReminders
         )
 
         val combinedXp = dbXp + local.bonusPetXp
@@ -108,18 +179,30 @@ class DeskPetViewModel(
         DeskUiState(
             petState = resolvedPetState,
             petMood = resolvedPetState.mood,
+            moodState = resolvedMoodState,
             speechBubbleText = resolvedPetState.speechText,
-            stateTransitionSummary = "${resolvedPetState.mood.stateCode} • ${resolvedPetState.dbTriggerSummary}",
+            stateTransitionSummary = "${resolvedPetState.mood.stateCode} • ${resolvedMoodState.happinessTier.label} (${resolvedMoodState.happinessScore}%)",
             level = level,
             totalXp = combinedXp,
             xpInCurrentLevel = xpInLevel,
             xpForNextLevel = 50,
             petInteractionCombo = local.petInteractionCombo,
             isAutoRotate3DEnabled = local.isAutoRotate3DEnabled,
+            breathInputText = local.breathInputText,
+            liveParsedCapture = liveParsed,
             allReminders = allReminders,
             activeReminders = activeReminders,
             ringingReminders = ringing,
-            overdueReminders = overdue,
+            overdueReminders = youMissed,
+            youMissedKnots = youMissed,
+            youForgotAndHeldKnots = youForgotAndHeld,
+            netMoneyOwedToYouInr = owedToYouTotal,
+            netMoneyYouOweInr = youOweTotal,
+            todayAndComingUpKnots = todayAndComingUp,
+            doneKnots = doneKnots,
+            noticeSettings = local.noticeSettings,
+            noticeSuggestions = local.noticeSuggestions,
+            lastDroppedNoticeAudit = local.lastDroppedNoticeAudit,
             completedCount = completedCount,
             nowMillis = now,
             canScheduleExactAlarms = alarmScheduler.canScheduleExactAlarms(),
@@ -129,13 +212,15 @@ class DeskPetViewModel(
         )
     }
         .onEach { state ->
-            // Record state machine mood transitions driven by Room updates into telemetry
-            if (lastLoggedMood != state.petMood) {
-                val previous = lastLoggedMood?.stateCode ?: "INIT"
+            val moodChanged = lastLoggedMood != state.petMood
+            val tierChanged = lastLoggedHappinessTier != state.moodState.happinessTier
+            if (moodChanged || tierChanged) {
+                val prevMood = lastLoggedMood?.stateCode ?: "INIT"
                 lastLoggedMood = state.petMood
+                lastLoggedHappinessTier = state.moodState.happinessTier
                 NookiSchedulerTelemetry.record(
-                    source = "StateFlowMachine",
-                    message = "Transition: $previous ➔ ${state.petMood.stateCode} (${state.petState.dbTriggerSummary})"
+                    source = "MoodStateMachine",
+                    message = "State: $prevMood ➔ ${state.petMood.stateCode} | Happiness: ${state.moodState.happinessScore}% (${state.moodState.happinessTier.label}, ${state.moodState.completedLast24Hours}/24h)"
                 )
             }
         }
@@ -162,10 +247,10 @@ class DeskPetViewModel(
             DeskIntent.PetNookiHead -> {
                 val now = System.currentTimeMillis()
                 val reactions = listOf(
-                    "Purr-fect! That head pat gave me +2 cozy XP!",
-                    "Hehe! Spin me around in 3D or add a new desk reminder!",
-                    "Nooki loves keeping your desk on schedule! +2 XP!",
-                    "Boop! Ready for your next deep-focus sprint!"
+                    "Tap any knot on my thread to untie it when you're done!",
+                    "Tell me anything in English, Hinglish, or हिंदी — I'll tie a knot for you!",
+                    "I'm watching what you missed, what you forgot, and what's on today!",
+                    "Boop! Every knot you untie boosts my happiness and your XP!"
                 )
                 ephemeralState.update { state ->
                     val nextCombo = state.petInteractionCombo + 1
@@ -187,6 +272,149 @@ class DeskPetViewModel(
                 ephemeralState.update { it.copy(isAutoRotate3DEnabled = !it.isAutoRotate3DEnabled) }
             }
 
+            is DeskIntent.UpdateBreathInput -> {
+                ephemeralState.update { it.copy(breathInputText = intent.text) }
+            }
+
+            DeskIntent.SaveBreathInput -> {
+                val currentInput = ephemeralState.value.breathInputText.trim()
+                if (currentInput.isEmpty()) return
+                viewModelScope.launch {
+                    val now = System.currentTimeMillis()
+                    val parsed = NookiBreathParser.parse(
+                        rawInput = currentInput,
+                        nowMillis = now,
+                        existingItems = uiState.value.allReminders
+                    )
+                    if (parsed.kind == NookiCaptureKind.QUESTION) {
+                        val answer = parsed.instantAnswerFromMemory ?: "I couldn't find that in your saved knots yet."
+                        ephemeralState.update {
+                            it.copy(
+                                celebratingUntilMillis = now + 4_000L,
+                                celebrationSpeech = answer
+                            )
+                        }
+                        _sideEffects.send(DeskSideEffect.ShowMessage(answer))
+                        return@launch
+                    }
+
+                    val (entity, _) = repository.saveParsedBreathCapture(parsed)
+                    ephemeralState.update {
+                        it.copy(
+                            breathInputText = "",
+                            celebratingUntilMillis = now + 3_200L,
+                            celebrationSpeech = "Tied a knot for '${entity.title}' (${parsed.timeExplanation})!"
+                        )
+                    }
+                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage("Nooki tied a knot: ${entity.title}")
+                    )
+                }
+            }
+
+            is DeskIntent.AcceptNoticeSuggestion -> {
+                viewModelScope.launch {
+                    val suggestion = intent.suggestion
+                    val parsed = NookiBreathParser.parse(
+                        rawInput = suggestion.sanitizedTitle,
+                        nowMillis = System.currentTimeMillis()
+                    )
+                    repository.saveParsedBreathCapture(parsed)
+                    ephemeralState.update { state ->
+                        state.copy(
+                            noticeSuggestions = state.noticeSuggestions.filterNot { it == suggestion },
+                            celebratingUntilMillis = System.currentTimeMillis() + 2_800L,
+                            celebrationSpeech = "Added '${suggestion.sanitizedTitle}' to your thread!"
+                        )
+                    }
+                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
+                }
+            }
+
+            is DeskIntent.DismissNoticeSuggestion -> {
+                ephemeralState.update { state ->
+                    state.copy(
+                        noticeSuggestions = state.noticeSuggestions.filterNot { it == intent.suggestion }
+                    )
+                }
+            }
+
+            is DeskIntent.ToggleNoticeKind -> {
+                ephemeralState.update { state ->
+                    val currentSet = state.noticeSettings.enabledKinds.toMutableSet()
+                    if (intent.kind in currentSet) {
+                        currentSet.remove(intent.kind)
+                    } else {
+                        currentSet.add(intent.kind)
+                    }
+                    state.copy(
+                        noticeSettings = state.noticeSettings.copy(enabledKinds = currentSet)
+                    )
+                }
+            }
+
+            is DeskIntent.SimulateIncomingNotification -> {
+                val result = NookiNoticeFilter.inspectNotification(
+                    packageName = intent.packageName,
+                    senderOrTitle = intent.senderOrTitle,
+                    rawText = intent.rawBody,
+                    settings = ephemeralState.value.noticeSettings
+                )
+                when (result) {
+                    is NoticeInspectionResult.DroppedSensitive -> {
+                        NookiSchedulerTelemetry.record(
+                            source = "NookiNoticeFilter",
+                            message = "PRIVACY GUARD: ${result.reason}",
+                            isWarning = true
+                        )
+                        ephemeralState.update {
+                            it.copy(
+                                lastDroppedNoticeAudit = "✅ Blocked OTP/Bank notification before DB: \"${result.reason}\""
+                            )
+                        }
+                        viewModelScope.launch {
+                            _sideEffects.send(DeskSideEffect.ShowMessage("Blocked OTP/sensitive notification before saving!"))
+                        }
+                    }
+
+                    is NoticeInspectionResult.DroppedDisabledOrIrrelevant -> {
+                        ephemeralState.update {
+                            it.copy(lastDroppedNoticeAudit = "Ignored notification: ${result.reason}")
+                        }
+                    }
+
+                    is NoticeInspectionResult.SafeSuggestion -> {
+                        NookiSchedulerTelemetry.record(
+                            source = "NookiNoticeFilter",
+                            message = "Noticed safe suggestion: '${result.sanitizedTitle}' (message body never stored)"
+                        )
+                        ephemeralState.update { state ->
+                            state.copy(
+                                noticeSuggestions = listOf(result) + state.noticeSuggestions,
+                                lastDroppedNoticeAudit = "Noticed '${result.sanitizedTitle}' (raw content stripped)"
+                            )
+                        }
+                    }
+                }
+            }
+
+            DeskIntent.EveningWrapMoveAllToTomorrow -> {
+                viewModelScope.launch {
+                    val count = repository.moveUnfinishedTodayToTomorrowMorning()
+                    val now = System.currentTimeMillis()
+                    ephemeralState.update {
+                        it.copy(
+                            celebratingUntilMillis = now + 3_500L,
+                            celebrationSpeech = "Evening wrap complete! Moved $count item(s) to tomorrow morning. Don't forget to charge your phone!"
+                        )
+                    }
+                    _sideEffects.send(
+                        DeskSideEffect.ShowMessage("Moved $count unfinished knot(s) to tomorrow 9:00 AM.")
+                    )
+                }
+            }
+
             is DeskIntent.SetComposerSheetOpen -> {
                 ephemeralState.update { it.copy(isComposerSheetOpen = intent.open) }
             }
@@ -198,7 +426,7 @@ class DeskPetViewModel(
             is DeskIntent.ScheduleReminder -> {
                 viewModelScope.launch {
                     val triggerAt = System.currentTimeMillis() + intent.delayMinutes * 60_000L
-                    val (entity, result) = repository.createAndScheduleReminder(
+                    val (entity, _) = repository.createAndScheduleReminder(
                         title = intent.title,
                         notes = intent.notes,
                         rawInput = "${intent.title} in ${intent.delayMinutes}m",
@@ -211,19 +439,11 @@ class DeskPetViewModel(
                         it.copy(
                             isComposerSheetOpen = false,
                             celebratingUntilMillis = now + 2_800L,
-                            celebrationSpeech = "Saved to Room! I'll ring my 3D bell for '${entity.title}'!",
+                            celebrationSpeech = "Tied a knot for '${entity.title}'!",
                             lastEarnedXp = 0
                         )
                     }
-                    val message = when (result) {
-                        is ScheduleResult.ExactScheduled ->
-                            "Scheduled exact alarm '${entity.title}'"
-                        is ScheduleResult.InexactFallbackScheduled ->
-                            "Scheduled '${entity.title}' (fallback mode)"
-                        is ScheduleResult.Failed ->
-                            "Saved to Room; alarm warning: ${result.errorMessage}"
-                    }
-                    _sideEffects.send(DeskSideEffect.ShowMessage(message))
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Tied knot: '${entity.title}'"))
                 }
             }
 
@@ -234,13 +454,13 @@ class DeskPetViewModel(
                     ephemeralState.update {
                         it.copy(
                             celebratingUntilMillis = now + 3_500L,
-                            celebrationSpeech = "Awesome job completing '${intent.reminder.title}'! +${intent.reminder.petMoodImpact} XP!",
+                            celebrationSpeech = "Knot untied! '${intent.reminder.title}' is done! +${intent.reminder.petMoodImpact} XP & +8% Happiness!",
                             lastEarnedXp = intent.reminder.petMoodImpact
                         )
                     }
                     _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Nooki cheered! +${intent.reminder.petMoodImpact} XP earned!")
+                        DeskSideEffect.ShowMessage("Knot untied! +${intent.reminder.petMoodImpact} XP")
                     )
                 }
             }
@@ -249,7 +469,7 @@ class DeskPetViewModel(
                 viewModelScope.launch {
                     repository.snoozeReminder(intent.reminder.id, intent.minutes)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Snoozed '${intent.reminder.title}' for ${intent.minutes}m.")
+                        DeskSideEffect.ShowMessage("Pushed '${intent.reminder.title}' by ${intent.minutes}m.")
                     )
                 }
             }
@@ -264,22 +484,22 @@ class DeskPetViewModel(
                 viewModelScope.launch {
                     val triggerAt = System.currentTimeMillis() + 5_000L
                     val (entity, _) = repository.createAndScheduleReminder(
-                        title = "5s 3D Bell Test Alarm",
-                        notes = "Watch Room emit RINGING and transition the centered 3D Nooki model in 5 seconds!",
-                        rawInput = "Test alarm in 5 seconds",
+                        title = "Evening दवाई (5s Test)",
+                        notes = "KIND:MEDICINE | Critical exact alarm test",
+                        rawInput = "कल शाम 6 बजे दवाई",
                         triggerAtMillis = triggerAt,
                         priority = ReminderPriority.URGENT,
-                        category = ReminderCategory.DESK
+                        category = ReminderCategory.HYDRATION
                     )
                     ephemeralState.update {
                         it.copy(
                             celebratingUntilMillis = System.currentTimeMillis() + 2_500L,
-                            celebrationSpeech = "Countdown started! Watch my StateFlow transition in 5 seconds!",
+                            celebrationSpeech = "Watch my 3D bell ring in 5 seconds!",
                             lastEarnedXp = 0
                         )
                     }
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Scheduled #${entity.id} for +5 seconds!")
+                        DeskSideEffect.ShowMessage("Scheduled '${entity.title}' for +5 seconds!")
                     )
                 }
             }
@@ -293,7 +513,7 @@ class DeskPetViewModel(
                     )
                     _sideEffects.send(
                         DeskSideEffect.ShowMessage(
-                            "Boot recovery: ${report.rescheduledCount} rescheduled, ${report.markedMissedCount} missed."
+                            "Reboot check: ${report.rescheduledCount} restored, ${report.markedMissedCount} moved to 'You missed'."
                         )
                     )
                 }
@@ -302,10 +522,22 @@ class DeskPetViewModel(
             DeskIntent.ClearCompleted -> {
                 viewModelScope.launch {
                     repository.clearCompletedReminders()
-                    _sideEffects.send(DeskSideEffect.ShowMessage("Cleared completed reminders."))
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Cleared untied knots."))
                 }
             }
         }
+    }
+
+    private fun isHeldOrMoneyNote(item: ReminderEntity): Boolean {
+        return item.notes.contains("KIND:HELD_MEMORY") ||
+            item.notes.contains("KIND:MONEY_OWED_TO_ME") ||
+            item.notes.contains("KIND:MONEY_I_OWE") ||
+            item.notes.contains("KIND:ITEM_LENT")
+    }
+
+    private fun extractInrAmount(notes: String): Int? {
+        val match = Regex("""INR:(\d+)""").find(notes) ?: return null
+        return match.groupValues[1].toIntOrNull()
     }
 
     class Factory(

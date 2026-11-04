@@ -7,39 +7,42 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val NookiDarkColorScheme = darkColorScheme(
-    primary = NookiAmberLight,
-    onPrimary = NookiDeepInk,
-    primaryContainer = Color(0xFF452708),
-    onPrimaryContainer = Color(0xFFFDE68A),
-    secondary = NookiSkyInfo,
-    onSecondary = NookiDeepInk,
-    secondaryContainer = Color(0xFF0C4A6E),
-    onSecondaryContainer = Color(0xFFE0F2FE),
-    tertiary = NookiCoralAccent,
-    onTertiary = NookiDeepInk,
-    background = NookiDarkBackground,
-    onBackground = NookiCreamText,
-    surface = NookiDarkSurface,
-    onSurface = NookiCreamText,
-    surfaceVariant = NookiDarkSurfaceVariant,
+private val NookiNightIndigoColorScheme = darkColorScheme(
+    primary = Marigold,
+    onPrimary = NightIndigo,
+    primaryContainer = NeelIndigo,
+    onPrimaryContainer = WashedCotton,
+    secondary = LeafGreen,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF134E3A),
+    onSecondaryContainer = WashedCotton,
+    tertiary = Sindoor,
+    onTertiary = Color.White,
+    background = NightIndigo,
+    onBackground = WashedCotton,
+    surface = NeelIndigo,
+    onSurface = WashedCotton,
+    surfaceVariant = Color(0xFF252D6B),
     onSurfaceVariant = NookiMutedLavender
 )
 
-private val NookiLightColorScheme = lightColorScheme(
-    primary = NookiAmberPrimary,
-    onPrimary = Color.White,
-    primaryContainer = NookiLightSurfaceVariant,
-    onPrimaryContainer = NookiDeepInk,
-    secondary = Color(0xFF0284C7),
+private val NookiWashedCottonColorScheme = lightColorScheme(
+    primary = NeelIndigo,
+    onPrimary = WashedCotton,
+    primaryContainer = Color(0xFFDDE2F8),
+    onPrimaryContainer = NightIndigo,
+    secondary = LeafGreen,
     onSecondary = Color.White,
-    tertiary = Color(0xFFE11D48),
-    background = NookiLightBackground,
-    onBackground = NookiDeepInk,
-    surface = NookiLightSurface,
-    onSurface = NookiDeepInk,
-    surfaceVariant = Color(0xFFF3E8FF),
-    onSurfaceVariant = Color(0xFF4C1D95)
+    secondaryContainer = Color(0xFFD1FAE5),
+    onSecondaryContainer = Color(0xFF064E3B),
+    tertiary = Sindoor,
+    onTertiary = Color.White,
+    background = WashedCotton,
+    onBackground = NightIndigo,
+    surface = Color.White,
+    onSurface = NightIndigo,
+    surfaceVariant = Color(0xFFE2E6F7),
+    onSurfaceVariant = NeelIndigo
 )
 
 @Composable
@@ -47,8 +50,8 @@ fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Default to cozy twilight dark desk theme for Nooki
-    val colorScheme = if (darkTheme) NookiDarkColorScheme else NookiDarkColorScheme
+    // Respects both dark (Night Indigo #12153A) and light (Washed Cotton #EEF0FA) themes
+    val colorScheme = if (darkTheme) NookiNightIndigoColorScheme else NookiNightIndigoColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
