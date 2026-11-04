@@ -24,6 +24,16 @@ Nooki sits on your desk, which here means your home screen. It naps when nothing
 when a reminder is coming, and gets visibly flustered when tasks pile up. Reminders fire on time
 through exact alarms, and they survive reboots, time-zone changes and app updates.
 
+Tell it what's coming in plain words, like *"physics exam on friday at 10am"* or
+*"claude limit resets in 5h"*, and Nooki works out the time, what kind of thing it is, and when to
+give you a heads-up.
+
+> [!NOTE]
+> Plain-language quick add and workflow tracking (exams, deadlines, AI limit resets, bills, habits,
+> heads-ups, repeats and countdowns) ship with
+> [PR #3](https://github.com/Rishicreates20/Nooki/pull/3), which is still in review. Builds from
+> `main` don't have them yet.
+
 <p align="center">
   <img src="docs/nooki-pet-moods.png" alt="Nooki's four moods: Sleeping, Happy, Alert, Overwhelmed" />
   <br/>
@@ -35,6 +45,7 @@ through exact alarms, and they survive reboots, time-zone changes and app update
 - [How to use Nooki](#how-to-use-nooki)
 - [Get the app](#get-the-app)
 - [Features](#features)
+- [Workflow tracking](#workflow-tracking)
 - [Tech stack](#tech-stack) · [Architecture](#architecture)
 - [Custom 3D models](#custom-3d-models) · [Tests](#tests) · [Roadmap](#roadmap)
 - [Share Nooki](#share-nooki)
@@ -51,10 +62,12 @@ through exact alarms, and they survive reboots, time-zone changes and app update
 2. **Allow the asks.** If Nooki shows **Allow Notifications** or **Enable Exact Alarms**, tap it
    so reminders ring on time. Each button only appears while that permission is missing, and older
    Android versions need neither.
-3. **Tell Nooki.** Add a reminder with a title and a time. With quick add
-   ([#3](https://github.com/Rishicreates20/Nooki/pull/3), in review) you just type
-   *"call mom tomorrow at 6pm"* and tap **Remind me**.
-4. **Watch the mood.** Nooki reacts to what's due. Tap it for a happy bounce.
+3. **Tell Nooki.** Type *"physics exam on friday at 10am"* or *"claude limit resets in 5h"* and
+   tap **Remind me**. Nooki spots exams, deadlines, bills and habits on its own.
+   *(Quick add ships with [#3](https://github.com/Rishicreates20/Nooki/pull/3). On `main` you pick
+   the title and time yourself.)*
+4. **Nooki keeps watch.** It sends heads-ups before exams, deadlines and bills, shows a countdown on
+   every card, and its mood follows what's due. Tap it for a happy bounce.
 5. **When it rings,** tap **Complete** (+XP) or **Snooze 5m** on the notification, or swipe it
    away to dismiss.
 
@@ -83,9 +96,12 @@ Release signing, per-ABI APKs and sideloading troubleshooting are covered in
 
 ## Features
 
-- **Plain-language quick add** *(in review, [#3](https://github.com/Rishicreates20/Nooki/pull/3))*.
-  Type a reminder the way you'd text a friend, like "dentist tue 3pm", and Nooki works out the
-  date and time.
+- **Plain-language quick add** *([#3](https://github.com/Rishicreates20/Nooki/pull/3))*. Type a
+  reminder the way you'd text a friend, like "physics exam on friday at 10am", and Nooki works out
+  the date, time, kind and repeat. If you leave out the time, it asks.
+- **Workflow tracking** *([#3](https://github.com/Rishicreates20/Nooki/pull/3))*. Exams, deadlines,
+  AI limit resets, bills and habits each get their own heads-ups, repeats, countdown and mood rules.
+  See [Workflow tracking](#workflow-tracking).
 - **Real-time 3D companion.** An original glTF model rendered with SceneView (Filament). It has
   four mood animations, a spring squash-and-stretch with haptics when you tap it, and a lean that
   follows your phone's tilt via the gravity sensor.
@@ -103,6 +119,27 @@ Release signing, per-ABI APKs and sideloading troubleshooting are covered in
   between moods, contextual color shifts, spring physics, and Fredoka + Plus Jakarta Sans
   typography.
 - **Adaptive icon** with a themed (monochrome) layer for Android 13+.
+
+## Workflow tracking
+
+> Ships with [PR #3](https://github.com/Rishicreates20/Nooki/pull/3).
+
+Nooki reads the kind of reminder from your words and treats each one differently:
+
+| Kind | Say something like | Heads-ups before it | How it affects Nooki |
+| --- | --- | --- | --- |
+| Exam | "physics exam on friday at 10am" | 1 week, 1 day, 2 hours | Awake a day ahead, Alert in the last 3 hours. A missed one counts double. |
+| Deadline | "assignment due monday 11:59pm" | 3 days, 1 day, 3 hours | Awake a day ahead, Alert in the last 3 hours. A missed one counts double. |
+| AI limit reset | "claude limit resets in 5h" | none | Good news only. It never stresses Nooki, and Nooki is Happy when it rings. |
+| Bill or renewal | "netflix renews on the 15th" | 3 days, 1 day | Awake a day ahead, Alert in the last hour. A missed one counts double. |
+| Habit | "take vitamins every day at 9pm" | none | Same as a normal task. |
+
+- **Your own heads-ups.** Add them in plain words: *"maths exam on dec 3, remind me 2 days before
+  and 1 hour before"*.
+- **Repeats.** Every day, every weekday, every week, every month or every year, keeping the same
+  time. A monthly bill on the 31st lands on the last day of shorter months.
+- **Countdowns.** Every card shows what's left, like "2 days left", "5 h left" or "12 min left".
+  Heads-up notifications are quieter than the alarm itself.
 
 ## Tech stack
 
