@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/nooki-icon.png" alt="Nooki app icon" width="320" />
+<img src="docs/nooki-icon.png" alt="Nooki app icon" width="240" />
 
 # Nooki: The Desk-Pet Reminder
 
@@ -16,6 +16,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/nooki-poster-square-1080.png" alt="Nooki poster: reminders with a tiny friend on your desk" width="560" />
+</p>
+
 Nooki sits on your desk, which here means your home screen. It naps when nothing is due, perks up
 when a reminder is coming, and gets visibly flustered when tasks pile up. Reminders fire on time
 through exact alarms, and they survive reboots, time-zone changes and app updates.
@@ -26,8 +30,61 @@ through exact alarms, and they survive reboots, time-zone changes and app update
   <sub>Sleeping · Happy · Alert · Overwhelmed. These are rendered from the bundled glTF model.</sub>
 </p>
 
+## Contents
+
+- [How to use Nooki](#how-to-use-nooki)
+- [Get the app](#get-the-app)
+- [Features](#features)
+- [Tech stack](#tech-stack) · [Architecture](#architecture)
+- [Custom 3D models](#custom-3d-models) · [Tests](#tests) · [Roadmap](#roadmap)
+- [Share Nooki](#share-nooki)
+
+## How to use Nooki
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/nooki-howto-square-1080.png" alt="How to use Nooki in five steps" /></td>
+<td>
+
+1. **Get the app.** Download the APK (see [Get the app](#get-the-app)) and tap it to install.
+   Allow installs from your browser or file manager if Android asks.
+2. **Say yes twice.** Tap **Allow Notifications** and **Enable Exact Alarms** so reminders ring
+   on time, even in battery saver.
+3. **Tell Nooki.** Add a reminder with a title and a time. With quick add
+   ([#3](https://github.com/Rishicreates20/Nooki/pull/3), in review) you just type
+   *"call mom tomorrow at 6pm"* and tap **Remind me**.
+4. **Watch the mood.** Nooki reacts to what's due. Tap it for a happy bounce.
+5. **When it rings,** pick **Complete** (+XP), **Snooze 5m** or **Dismiss** straight from the
+   notification.
+
+</td>
+</tr>
+</table>
+
+## Get the app
+
+### Download a build
+
+Every push to `main` (and every pull request) builds APKs on GitHub. Open the latest successful
+[Build APK run](https://github.com/Rishicreates20/Nooki/actions/workflows/android-apk.yml),
+download the `nooki-apk-…` artifact, unzip it on your phone and open `app-debug.apk`.
+
+### Build it yourself
+
+```bash
+git clone https://github.com/Rishicreates20/Nooki.git && cd Nooki
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Release signing, per-ABI APKs and sideloading troubleshooting are covered in
+[docs/BUILD_AND_INSTALL.md](docs/BUILD_AND_INSTALL.md).
+
 ## Features
 
+- **Plain-language quick add** *(in review, [#3](https://github.com/Rishicreates20/Nooki/pull/3))*.
+  Type a reminder the way you'd text a friend, like "dentist tue 3pm", and Nooki works out the
+  date and time.
 - **Real-time 3D companion.** An original glTF model rendered with SceneView (Filament). It has
   four mood animations, a spring squash-and-stretch with haptics when you tap it, and a lean that
   follows your phone's tilt via the gravity sensor.
@@ -75,25 +132,6 @@ Room (ReminderDao) ──Flow──▶ ReminderRepository ──▶ Compose UI (
 - `ui/`: theme, typography and reusable components.
 - `tools/`: stdlib-only Python scripts that generate the 3D model and the launcher icon.
 
-## Get the app
-
-### Download a build
-
-Every push to `main` (and every pull request) builds APKs on GitHub. Open the latest successful
-[Build APK run](https://github.com/Rishicreates20/Nooki/actions/workflows/android-apk.yml),
-download the `nooki-apk-…` artifact, unzip it on your phone and open `app-debug.apk`.
-
-### Build it yourself
-
-```bash
-git clone https://github.com/Rishicreates20/Nooki.git && cd Nooki
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-Release signing, per-ABI APKs and sideloading troubleshooting are covered in
-[docs/BUILD_AND_INSTALL.md](docs/BUILD_AND_INSTALL.md).
-
 ## Custom 3D models
 
 Drop your own `.glb` into `app/src/main/assets/models/` and name its clips `Sleeping`, `Happy`,
@@ -117,6 +155,24 @@ python3 tools/icon/generate_icon.py
 - [ ] Full UI theme overhaul (tonal elevation, glass surfaces, tactile components)
 - [ ] Home-screen Glance widget showing Nooki's mood
 - [ ] Guided setup for OEM battery restrictions ([dontkillmyapp.com](https://dontkillmyapp.com))
+
+## Share Nooki
+
+Ready-made images for social posts, sized for feeds (1080×1080) and stories (1080×1920). Click any
+of them to open the full-size PNG.
+
+<p align="center">
+  <a href="docs/images/nooki-poster-story-1080x1920.png"><img src="docs/images/nooki-poster-story-1080x1920.png" alt="Nooki story poster" width="260" /></a>
+  &nbsp;
+  <a href="docs/images/nooki-howto-story-1080x1920.png"><img src="docs/images/nooki-howto-story-1080x1920.png" alt="How to use Nooki, story format" width="260" /></a>
+</p>
+
+| Image | Size | Use it for |
+| --- | --- | --- |
+| [nooki-poster-square-1080.png](docs/images/nooki-poster-square-1080.png) | 1080×1080 | Feed post introducing Nooki |
+| [nooki-poster-story-1080x1920.png](docs/images/nooki-poster-story-1080x1920.png) | 1080×1920 | Story or Reel cover |
+| [nooki-howto-square-1080.png](docs/images/nooki-howto-square-1080.png) | 1080×1080 | Feed post with the five setup steps |
+| [nooki-howto-story-1080x1920.png](docs/images/nooki-howto-story-1080x1920.png) | 1080×1920 | Story with the five setup steps |
 
 ---
 
