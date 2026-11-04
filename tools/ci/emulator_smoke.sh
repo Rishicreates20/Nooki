@@ -13,6 +13,8 @@ shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
 fail() { echo "CHECK FAILED: $1"; FAILED=1; }
 pass() { echo "CHECK PASSED: $1"; }
 
+# A slow emulator can raise "isn't responding" dialogs for other apps, and those swallow every tap.
+adb shell settings put global hide_error_dialogs 1
 adb install -r -t app/build/outputs/apk/debug/app-debug.apk || exit 1
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
 adb logcat -c
@@ -88,6 +90,15 @@ shot 07_capture_from_share
 adb shell input keyevent KEYCODE_ENTER
 sleep 3
 shot 08_after_save
+saved() {
+  adb exec-out "run-as $PKG cat databases/nooki_desk_pet.db" > "$OUT/db.bin"
+  adb exec-out "run-as $PKG cat databases/nooki_desk_pet.db-wal" >> "$OUT/db.bin"
+  LC_ALL=C grep -aq "$1" "$OUT/db.bin"
+  local found=$?
+  rm -f "$OUT/db.bin"
+  return $found
+}
+saved "Ring test" && pass "the reminder was saved" || fail "the reminder was not saved"
 FOUND=0
 for _ in $(seq 1 26); do
   if adb shell dumpsys notification --noredact | grep -q "Ring test"; then FOUND=1; break; fi
@@ -112,6 +123,7 @@ share "Reboot test in 4 minutes"
 sleep 4
 adb shell input keyevent KEYCODE_ENTER
 sleep 3
+saved "Reboot test" && pass "the reboot reminder was saved" || fail "the reboot reminder was not saved"
 adb reboot
 adb wait-for-device
 for _ in $(seq 1 60); do
