@@ -23,21 +23,27 @@ class NookiSettings(private val context: Context) {
         val noticingOfferHidden = booleanPreferencesKey("noticing_offer_hidden")
     }
 
-    val noticeSettings: Flow<NoticeSettings> = context.nookiSettings.data.map { p ->
+    val noticeSettings: Flow<NoticeSettings> = context.nookiSettings.data.map { readNotice(it) }
+
+    private fun readNotice(p: Preferences): NoticeSettings =
         NoticeSettings(
             missedCalls = p[Keys.missedCalls] ?: true,
             unreadMessages = p[Keys.messages] ?: true,
             bills = p[Keys.bills] ?: true,
         )
-    }
 
     /** The person said "Not now" to noticing. Nooki never asks again on its own. */
     val noticingOfferHidden: Flow<Boolean> = context.nookiSettings.data.map { it[Keys.noticingOfferHidden] ?: false }
 
     suspend fun currentNoticeSettings(): NoticeSettings = noticeSettings.first()
 
-    suspend fun setNoticeSettings(settings: NoticeSettings) {
+    /**
+     * Changes the switches from what is stored now, inside one DataStore transaction, so quick
+     * taps on different switches never overwrite each other with a stale snapshot.
+     */
+    suspend fun updateNoticeSettings(change: (NoticeSettings) -> NoticeSettings) {
         context.nookiSettings.edit {
+            val settings = change(readNotice(it))
             it[Keys.missedCalls] = settings.missedCalls
             it[Keys.messages] = settings.unreadMessages
             it[Keys.bills] = settings.bills

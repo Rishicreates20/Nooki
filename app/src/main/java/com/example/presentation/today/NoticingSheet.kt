@@ -36,7 +36,7 @@ import com.example.core.notice.NoticeSettings
 fun NoticingSheet(
     accessOn: Boolean,
     settings: NoticeSettings,
-    onSettingsChange: (NoticeSettings) -> Unit,
+    onSettingsChange: ((NoticeSettings) -> NoticeSettings) -> Unit,
     onOpenAccess: () -> Unit,
     onOpenAppInfo: () -> Unit,
     onClose: () -> Unit,
@@ -66,9 +66,9 @@ fun NoticingSheet(
             Block("Your choice", "Nothing becomes a reminder until you tap it. You can turn off each kind below, and off means off.")
 
             Spacer(Modifier.height(16.dp))
-            Toggle("Missed calls", settings.missedCalls) { onSettingsChange(settings.copy(missedCalls = it)) }
-            Toggle("Messages unopened for 2 hours", settings.unreadMessages) { onSettingsChange(settings.copy(unreadMessages = it)) }
-            Toggle("Bills and dues from SMS", settings.bills) { onSettingsChange(settings.copy(bills = it)) }
+            Toggle("Missed calls", settings.missedCalls) { on -> onSettingsChange { s -> s.copy(missedCalls = on) } }
+            Toggle("Messages unopened for 2 hours", settings.unreadMessages) { on -> onSettingsChange { s -> s.copy(unreadMessages = on) } }
+            Toggle("Bills and dues from SMS", settings.bills) { on -> onSettingsChange { s -> s.copy(bills = on) } }
 
             Spacer(Modifier.height(20.dp))
             if (accessOn) {

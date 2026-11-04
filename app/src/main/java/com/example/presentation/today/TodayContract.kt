@@ -29,7 +29,8 @@ sealed interface TodayIntent {
     data class Later(val ref: KnotRef) : TodayIntent
     data object MoveLeftoversToTomorrow : TodayIntent
     data object CloseAnswer : TodayIntent
-    data class SetNoticeSettings(val settings: NoticeSettings) : TodayIntent
+    /** One switch changed; applied to the stored settings, not to a possibly stale snapshot. */
+    data class ChangeNoticeSettings(val change: (NoticeSettings) -> NoticeSettings) : TodayIntent
     data object HideNoticingOffer : TodayIntent
 }
 

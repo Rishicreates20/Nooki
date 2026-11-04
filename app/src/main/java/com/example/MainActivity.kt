@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
                     NoticingSheet(
                         accessOn = listenerOn,
                         settings = state.noticeSettings,
-                        onSettingsChange = { viewModel.onIntent(TodayIntent.SetNoticeSettings(it)) },
+                        onSettingsChange = { change -> viewModel.onIntent(TodayIntent.ChangeNoticeSettings(change)) },
                         onOpenAccess = { openNotificationAccess() },
                         onOpenAppInfo = {
                             runCatching {

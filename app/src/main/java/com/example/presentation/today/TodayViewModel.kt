@@ -37,7 +37,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -109,7 +108,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             is TodayIntent.Later -> later(intent.ref)
             TodayIntent.MoveLeftoversToTomorrow -> moveLeftovers()
             TodayIntent.CloseAnswer -> answer.value = null
-            is TodayIntent.SetNoticeSettings -> viewModelScope.launch { settings.setNoticeSettings(intent.settings) }
+            is TodayIntent.ChangeNoticeSettings -> viewModelScope.launch { settings.updateNoticeSettings(intent.change) }
             TodayIntent.HideNoticingOffer -> viewModelScope.launch { settings.hideNoticingOffer() }
         }
     }
@@ -122,6 +121,9 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     private fun submit(text: String) {
         val raw = text.trim()
         if (raw.isEmpty()) return
+        // Clear on the main thread before saving, so a quick second tap finds an empty box
+        // instead of saving the same thing twice.
+        draft.value = ""
         viewModelScope.launch(Dispatchers.IO) {
             when (val u = TellNooki.understand(raw)) {
                 Understood.Empty -> return@launch
@@ -146,12 +148,16 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is Understood.Reminder -> {
                     val (saved, result) = repository.saveParsed(u.reminder, raw)
-                    effects.send(TodayEffect.Say(if (saved.hasTime) "Saved" else "Saved. Nooki will ask for a time this evening."))
+                    val said = when {
+                        !saved.hasTime -> "Saved. Nooki will ask for a time this evening."
+                        result is ScheduleResult.Failed -> "Saved, but the phone would not set the alarm. Nooki will try again when the phone restarts."
+                        else -> "Saved"
+                    }
+                    effects.send(TodayEffect.Say(said))
                     if (saved.hasTime) effects.send(TodayEffect.AskNotificationPermission)
                     if (result is ScheduleResult.InexactFallbackScheduled) effects.send(TodayEffect.OfferExactAlarms)
                 }
             }
-            draft.update { if (it.trim() == raw) "" else it }
         }
     }
 
