@@ -63,6 +63,9 @@ interface NoticedDao {
     @Query("SELECT * FROM noticed_items ORDER BY noticed_at_millis DESC")
     suspend fun getAll(): List<NoticedItemEntity>
 
+    @Query("SELECT * FROM noticed_items WHERE source_key_hash = :keyHash AND status = 'SUGGESTED' LIMIT 1")
+    suspend fun findOpenByKey(keyHash: String): NoticedItemEntity?
+
     /** Collapse repeats: the same caller noticed again within a window is one item. */
     @Query(
         "SELECT COUNT(*) FROM noticed_items WHERE type = :type AND who = :who AND noticed_at_millis >= :sinceMillis"

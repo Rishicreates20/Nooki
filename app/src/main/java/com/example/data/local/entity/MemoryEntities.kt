@@ -46,7 +46,10 @@ enum class NoticedStatus {
  * Something Nooki noticed in a notification. Never message content: only who and when, or for a
  * bill only the name, amount and date. OTPs and balances are dropped before this is built.
  */
-@Entity(tableName = "noticed_items", indices = [Index(value = ["status"]), Index(value = ["noticed_at_millis"])])
+@Entity(
+    tableName = "noticed_items",
+    indices = [Index(value = ["status"]), Index(value = ["noticed_at_millis"]), Index(value = ["source_key_hash"])]
+)
 data class NoticedItemEntity(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0L,
     @ColumnInfo(name = "type") val type: NoticedType,
@@ -58,4 +61,6 @@ data class NoticedItemEntity(
     @ColumnInfo(name = "due_year") val dueYear: Int? = null,
     @ColumnInfo(name = "noticed_at_millis") val noticedAtMillis: Long,
     @ColumnInfo(name = "status") val status: NoticedStatus = NoticedStatus.SUGGESTED,
+    /** One-way hash of the notification's key, to collapse updates and notice when it is opened. */
+    @ColumnInfo(name = "source_key_hash") val sourceKeyHash: String? = null,
 )

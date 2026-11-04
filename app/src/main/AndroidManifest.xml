@@ -87,6 +87,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- Nooki notices: missed calls, unread messages, bills. Enabled only by the person, after
+             the in-app disclosure. Keeps who/when or bill name/amount/date; never content or OTPs. -->
+        <service
+            android:name=".notice.NookiNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

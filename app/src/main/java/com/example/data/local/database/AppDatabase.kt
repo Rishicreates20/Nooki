@@ -74,10 +74,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `noticed_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                         "`type` TEXT NOT NULL, `who` TEXT NOT NULL, `amount_paise` INTEGER, `due_day` INTEGER, " +
-                        "`due_month` INTEGER, `due_year` INTEGER, `noticed_at_millis` INTEGER NOT NULL, `status` TEXT NOT NULL)"
+                        "`due_month` INTEGER, `due_year` INTEGER, `noticed_at_millis` INTEGER NOT NULL, `status` TEXT NOT NULL, " +
+                        "`source_key_hash` TEXT)"
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_noticed_items_status` ON `noticed_items` (`status`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_noticed_items_noticed_at_millis` ON `noticed_items` (`noticed_at_millis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_noticed_items_source_key_hash` ON `noticed_items` (`source_key_hash`)")
             }
         }
 

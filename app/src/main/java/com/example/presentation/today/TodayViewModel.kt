@@ -23,6 +23,7 @@ import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderStatus
 import com.example.data.local.entity.SavedThingEntity
 import com.example.data.repository.ReminderRepositoryImpl
+import com.example.data.settings.NookiSettings
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NotificationHelper
 import com.example.scheduler.ScheduleResult
@@ -48,6 +49,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getInstance(application)
     private val scheduler = AndroidExactAlarmScheduler(application)
     private val repository = ReminderRepositoryImpl(db.reminderDao(), scheduler)
+    private val settings = NookiSettings(application)
 
     private val draft = MutableStateFlow("")
     private val answer = MutableStateFlow<Answer?>(null)
@@ -76,7 +78,9 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         ) to now
     }.flowOn(Dispatchers.Default)
 
-    val state: StateFlow<TodayState> = combine(board, draft, answer) { (b, now), text, ans ->
+    val state: StateFlow<TodayState> = combine(
+        board, draft, answer, settings.noticeSettings, settings.noticingOfferHidden,
+    ) { (b, now), text, ans, noticeSettings, offerHidden ->
         val hour = Calendar.getInstance().apply { timeInMillis = now }.get(Calendar.HOUR_OF_DAY)
         val leftovers = b.missed.any { it.ref is KnotRef.Reminder } || b.todo.isNotEmpty() || b.noTimeCount > 0
         TodayState(
@@ -85,6 +89,8 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             preview = UnderstoodText.describe(TellNooki.understand(text, now), now),
             answer = ans,
             showEveningWrap = hour >= 18 && leftovers,
+            noticeSettings = noticeSettings,
+            noticingOfferHidden = offerHidden,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayState())
 
@@ -96,6 +102,8 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             is TodayIntent.Later -> later(intent.ref)
             TodayIntent.MoveLeftoversToTomorrow -> moveLeftovers()
             TodayIntent.CloseAnswer -> answer.value = null
+            is TodayIntent.SetNoticeSettings -> viewModelScope.launch { settings.setNoticeSettings(intent.settings) }
+            TodayIntent.HideNoticingOffer -> viewModelScope.launch { settings.hideNoticingOffer() }
         }
     }
 

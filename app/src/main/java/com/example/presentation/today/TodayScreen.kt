@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -79,6 +80,8 @@ fun TodayScreen(
     state: TodayState,
     onIntent: (TodayIntent) -> Unit,
     onVoice: () -> Unit,
+    noticingOn: Boolean,
+    onOpenNoticing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The one moment of motion: when the app opens, the thread drops from Nooki.
@@ -98,7 +101,7 @@ fun TodayScreen(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            item(key = "nooki") { NookiHeader(board?.mood ?: NookiMood.SLEEPING, board) }
+            item(key = "nooki") { NookiHeader(board?.mood ?: NookiMood.SLEEPING, board, onOpenNoticing) }
 
             state.answer?.let { answer ->
                 item(key = "answer") { AnswerBlock(answer, onClose = { onIntent(TodayIntent.CloseAnswer) }) }
@@ -138,6 +141,11 @@ fun TodayScreen(
                 if (state.showEveningWrap) {
                     item(key = "wrap") { EveningWrap(onMove = { onIntent(TodayIntent.MoveLeftoversToTomorrow) }) }
                 }
+                if (!noticingOn && !state.noticingOfferHidden) {
+                    item(key = "notice-offer") {
+                        NoticingOffer(onShow = onOpenNoticing, onNotNow = { onIntent(TodayIntent.HideNoticingOffer) })
+                    }
+                }
             }
         }
         TellNookiBar(state, onIntent, onVoice)
@@ -145,7 +153,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun NookiHeader(mood: NookiMood, board: TodayBoard?) {
+private fun NookiHeader(mood: NookiMood, board: TodayBoard?, onOpenNoticing: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 12.dp),
@@ -166,6 +174,25 @@ private fun NookiHeader(mood: NookiMood, board: TodayBoard?) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
             )
+        }
+        IconButton(onClick = onOpenNoticing) {
+            Icon(Icons.Outlined.NotificationsNone, contentDescription = "What Nooki notices")
+        }
+    }
+}
+
+@Composable
+private fun NoticingOffer(onShow: () -> Unit, onNotNow: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(start = ThreadX + 24.dp, end = 20.dp, top = 24.dp)) {
+        Text("Nooki can notice for you", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            "Missed calls and bills from SMS can show up here on their own. Nothing leaves your phone.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row {
+            TextButton(onClick = onShow) { Text("See how it works") }
+            TextButton(onClick = onNotNow) { Text("Not now") }
         }
     }
 }

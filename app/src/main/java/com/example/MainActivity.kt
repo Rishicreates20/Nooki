@@ -2,6 +2,9 @@ package com.example
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
+import android.net.Uri
+import android.provider.Settings
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -21,12 +24,19 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.notice.NookiNotificationListener
+import com.example.presentation.today.NoticingSheet
 import com.example.presentation.today.TodayEffect
 import com.example.presentation.today.TodayIntent
 import com.example.presentation.today.TodayScreen
@@ -53,6 +63,12 @@ class MainActivity : ComponentActivity() {
             NookiTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val snackbar = remember { SnackbarHostState() }
+                var showNoticing by rememberSaveable { mutableStateOf(false) }
+                var listenerOn by remember { mutableStateOf(isListenerOn()) }
+                LifecycleResumeEffect(Unit) {
+                    listenerOn = isListenerOn()
+                    onPauseOrDispose { }
+                }
 
                 // Ask for notifications only at the moment it clearly helps: right after the first
                 // reminder with a time is saved.
@@ -97,6 +113,8 @@ class MainActivity : ComponentActivity() {
                     TodayScreen(
                         state = state,
                         onIntent = viewModel::onIntent,
+                        noticingOn = listenerOn,
+                        onOpenNoticing = { showNoticing = true },
                         onVoice = {
                             val speech = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -114,8 +132,39 @@ class MainActivity : ComponentActivity() {
                     )
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
                 }
+
+                if (showNoticing) {
+                    NoticingSheet(
+                        accessOn = listenerOn,
+                        settings = state.noticeSettings,
+                        onSettingsChange = { viewModel.onIntent(TodayIntent.SetNoticeSettings(it)) },
+                        onOpenAccess = { openNotificationAccess() },
+                        onOpenAppInfo = {
+                            runCatching {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                            }
+                        },
+                        onClose = { showNoticing = false },
+                    )
+                }
             }
         }
+    }
+
+    private fun isListenerOn(): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+
+    private fun openNotificationAccess() {
+        val detail = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).putExtra(
+                Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                ComponentName(this, NookiNotificationListener::class.java).flattenToString(),
+            )
+        } else {
+            null
+        }
+        val list = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        if (detail == null || runCatching { startActivity(detail) }.isFailure) runCatching { startActivity(list) }
     }
 
     override fun onNewIntent(intent: Intent) {
