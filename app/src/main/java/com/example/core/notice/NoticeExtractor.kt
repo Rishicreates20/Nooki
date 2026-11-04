@@ -50,6 +50,7 @@ sealed interface Noticed {
 object NoticeExtractor {
 
     private const val MAX_NAME_LENGTH = 40
+    private const val MAX_RUPEE_DIGITS = 12
 
     private val missedCallTitle = Regex("""^\s*(\d+\s+)?missed\s+calls?\s*(from)?\s*[:\-]?\s*""", RegexOption.IGNORE_CASE)
     private val missedCallAnywhere = Regex("""\bmissed\s+calls?\b|मिस्ड\s*कॉल""", RegexOption.IGNORE_CASE)
@@ -119,6 +120,8 @@ object NoticeExtractor {
         val match = amount.find(text) ?: return null
         val digits = match.groupValues[1].replace(",", "")
         val parts = digits.split('.')
+        // No real bill is a trillion rupees; refusing long numbers also keeps the maths from overflowing.
+        if (parts[0].length > MAX_RUPEE_DIGITS) return null
         val rupees = parts[0].toLongOrNull() ?: return null
         val paise = parts.getOrNull(1)?.padEnd(2, '0')?.take(2)?.toLongOrNull() ?: 0L
         return rupees * 100 + paise
@@ -142,6 +145,14 @@ object NoticeExtractor {
         return null
     }
 
-    private fun validDay(day: Int, month: Int, year: Int?): DueDay? =
-        if (day in 1..31 && month in 1..12) DueDay(day, month, year) else null
+    private fun validDay(day: Int, month: Int, year: Int?): DueDay? {
+        if (month !in 1..12) return null
+        val leap = year == null || (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))
+        val maxDay = when (month) {
+            2 -> if (leap) 29 else 28
+            4, 6, 9, 11 -> 30
+            else -> 31
+        }
+        return if (day in 1..maxDay) DueDay(day, month, year) else null
+    }
 }

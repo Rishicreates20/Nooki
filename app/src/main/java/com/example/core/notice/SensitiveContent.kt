@@ -20,6 +20,9 @@ object SensitiveContent {
         """auth(entication)?\s+code""",
         """login\s+code""",
         """\b(your|the)\s+code\s+(is|:)""",
+        // "Code: 123456", "code 4821", "482193 is your ..." with no other keyword
+        """\bcodes?\b\s*[:#-]?\s*\d{3,8}\b""",
+        """\b\d{4,8}\s+is\s+(your|the)\b""",
         """\bis\s+your\s+.{0,20}code\b""",
         """\bpass\s?code\b""",
         """\bdo\s+not\s+share\b""",

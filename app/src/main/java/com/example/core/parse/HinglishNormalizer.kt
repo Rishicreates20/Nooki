@@ -79,8 +79,15 @@ object HinglishNormalizer {
         }
     }
 
+    private val pone = Regex("(?i)(?<![$L])(?:pone|paune|पौने)\\s+(\\d{1,2})\\s*(?:baje|bje|बजे)?(?![$L])")
+
     fun normalize(input: String): String {
         var text = buildString(input.length) { input.forEach { append(devanagariDigits[it] ?: it) } }
+        // "pone 9" = quarter to 9 = 8:45. Needs arithmetic, so it runs before the fixed rules.
+        text = pone.replace(text) { m ->
+            val hour = m.groupValues[1].toInt()
+            if (hour !in 1..12) m.value else " at ${if (hour == 1) 12 else hour - 1}:45 "
+        }
         rules.forEach { (regex, replacement) -> text = regex.replace(text, replacement) }
         // Ordinals made from "1 tarikh" read "1th"; fix them so the parser's ordinal rule matches.
         text = text.replace(Regex("(?<!1)1th\\b"), "1st").replace(Regex("(?<!1)2th\\b"), "2nd").replace(Regex("(?<!1)3th\\b"), "3rd")

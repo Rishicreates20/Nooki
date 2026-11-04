@@ -79,6 +79,10 @@ class NoticeExtractorTest {
         assertEquals(DueDay(7, 1, null), NoticeExtractor.parseDueDay("due Jan 7th"))
         assertEquals(DueDay(30, 9, null), NoticeExtractor.parseDueDay("due on 30th September"))
         assertNull(NoticeExtractor.parseDueDay("no date here"))
+        // Impossible dates are refused rather than rolled into the next month.
+        assertNull(NoticeExtractor.parseDueDay("due 31 Apr"))
+        assertNull(NoticeExtractor.parseDueDay("due 29/02/2027"))
+        assertEquals(DueDay(29, 2, 2028), NoticeExtractor.parseDueDay("due 29/02/2028"))
     }
 
     @Test
@@ -87,6 +91,7 @@ class NoticeExtractorTest {
         assertEquals(1_234_500L, NoticeExtractor.parseAmountPaise("INR 12,345"))
         assertEquals(9_950L, NoticeExtractor.parseAmountPaise("Rs.99.5 due"))
         assertNull(NoticeExtractor.parseAmountPaise("five hundred"))
+        assertNull(NoticeExtractor.parseAmountPaise("Rs 99999999999999999999"))
     }
 
     // ---- Unread messages -----------------------------------------------------------------------
@@ -118,5 +123,12 @@ class NoticeExtractorTest {
     fun `sensitive check handles empty input`() {
         assertFalse(SensitiveContent.isSensitive(null, ""))
         assertTrue(SensitiveContent.isSensitive("OTP"))
+    }
+
+    @Test
+    fun `a bare code in a title is never kept as a sender`() {
+        assertTrue(SensitiveContent.isSensitive("Code: 123456", null))
+        assertTrue(SensitiveContent.isSensitive("482193 is your Swiggy login", null))
+        assertNull(NoticeExtractor.extract(RawNotification("com.whatsapp", "msg", "Code: 123456", "hi", 0L), NoticeSettings()))
     }
 }

@@ -71,6 +71,7 @@ class TellNookiTest {
     fun `more Hinglish times`() {
         assertEquals(at(2026, Calendar.NOVEMBER, 4, 19, 0), reminder("shaam 7 baje mummy ko call").triggerAtMillis)
         assertEquals(at(2026, Calendar.NOVEMBER, 6, 21, 30), reminder("parso raat saade 9 baje movie").triggerAtMillis)
+        assertEquals(at(2026, Calendar.NOVEMBER, 5, 8, 45), reminder("kal subah pone 9 baje doctor").triggerAtMillis)
         assertEquals(now + 2 * 3_600_000L, reminder("2 ghante baad chai").triggerAtMillis)
         assertEquals(RecurrenceRule.DAILY, reminder("roz raat 10 baje dawai").recurrenceRule)
         val rent = reminder("har mahine 5 tarikh ko rent")
