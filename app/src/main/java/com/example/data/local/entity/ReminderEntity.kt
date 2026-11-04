@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.example.domain.model.Reminder
 
 /**
  * Priority level of a desk reminder, influencing Nooki's urgency animation and XP reward.
@@ -40,7 +41,7 @@ enum class ReminderStatus(val label: String) {
 }
 
 /**
- * Room Entity representing a scheduled desk-pet reminder.
+ * Room Entity representing a scheduled desk-pet reminder in the Data Layer (`reminders` table).
  * Indexed by [triggerAtMillis] and [status] for fast boot recovery and reactive timeline queries.
  */
 @Entity(
@@ -101,3 +102,41 @@ data class ReminderEntity(
             (status == ReminderStatus.RINGING && nowMillis - triggerAtMillis > 5 * 60_000L) ||
             ((status == ReminderStatus.SCHEDULED || status == ReminderStatus.SNOOZED) && triggerAtMillis < nowMillis)
 }
+
+/**
+ * Clean Architecture Mapper: Data Layer [ReminderEntity] -> Domain Layer [Reminder].
+ */
+fun ReminderEntity.toDomain(): Reminder = Reminder(
+    id = id,
+    title = title,
+    notes = notes,
+    rawInput = rawInput,
+    triggerAtMillis = triggerAtMillis,
+    createdAtMillis = createdAtMillis,
+    completedAtMillis = completedAtMillis,
+    priority = priority,
+    category = category,
+    status = status,
+    snoozeCount = snoozeCount,
+    recurrenceMinutes = recurrenceMinutes,
+    petMoodImpact = petMoodImpact
+)
+
+/**
+ * Clean Architecture Mapper: Domain Layer [Reminder] -> Data Layer [ReminderEntity].
+ */
+fun Reminder.toEntity(): ReminderEntity = ReminderEntity(
+    id = id,
+    title = title,
+    notes = notes,
+    rawInput = rawInput,
+    triggerAtMillis = triggerAtMillis,
+    createdAtMillis = createdAtMillis,
+    completedAtMillis = completedAtMillis,
+    priority = priority,
+    category = category,
+    status = status,
+    snoozeCount = snoozeCount,
+    recurrenceMinutes = recurrenceMinutes,
+    petMoodImpact = petMoodImpact
+)
