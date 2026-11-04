@@ -1157,6 +1157,7 @@ private fun ProfileStatBox(
 @Composable
 fun NookiTasksAndProfileScreen(
     uiState: DeskUiState,
+    onSyncGpsWeather: () -> Unit = {},
     onIntent: (DeskIntent) -> Unit
 ) {
     LazyColumn(
@@ -1195,7 +1196,18 @@ fun NookiTasksAndProfileScreen(
             )
         }
 
-        // 2. Sanctuary Theme Selector (changes app color palette & syncs 3D particle colors)
+        // 2. Local Weather & 3D Desk Environment Bar (Location API)
+        item {
+            LocalWeatherEnvironmentBar(
+                weatherState = uiState.weatherState,
+                onSyncGpsWeather = onSyncGpsWeather,
+                onSelectWeatherCondition = { condition ->
+                    onIntent(DeskIntent.SelectWeatherOverride(condition))
+                }
+            )
+        }
+
+        // 3. Sanctuary Theme Selector (changes app color palette & syncs 3D particle colors)
         item {
             ThemeSelectorCard(
                 selectedTheme = uiState.selectedTheme,

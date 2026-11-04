@@ -68,6 +68,7 @@ import com.example.domain.model.MoodState
 import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.PetGestureType
+import com.example.domain.model.WeatherCondition
 import com.example.ui.theme.LeafGreen
 import com.example.ui.theme.LocalNookiAppTheme
 import com.example.ui.theme.Marigold
@@ -121,6 +122,7 @@ fun Nooki3DCenterpiece(
     mood: NookiPetMood,
     moodState: MoodState = MoodState(petMood = mood),
     appTheme: NookiAppTheme = LocalNookiAppTheme.current,
+    weatherCondition: WeatherCondition = WeatherCondition.SUNLIT_BREEZE,
     speechText: String,
     isAutoRotateEnabled: Boolean,
     petCombo: Int,
@@ -374,10 +376,11 @@ fun Nooki3DCenterpiece(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "${moodState.happinessTier.badgeEmoji} ${mood.displayTitle.uppercase()} • ${moodState.happinessScore}% HAPPY",
+                    text = "${moodState.happinessTier.badgeEmoji} ${mood.displayTitle.uppercase()} • ${moodState.happinessScore}% HAPPY • ${weatherCondition.badgeEmoji} ${weatherCondition.displayName.uppercase()}",
                     style = MaterialTheme.typography.labelLarge,
                     color = auraColor,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
@@ -504,10 +507,12 @@ fun Nooki3DCenterpiece(
                     )
                 }
 
-                // 2. Floating 3D Isometric Desk Island Pedestal
+                // 2. Floating 3D Isometric Desk Island Pedestal (affected by local WeatherCondition)
                 val islandTopY = cy + 84.dp.toPx() + parallaxY * 0.25f
                 val islandWidth = 216.dp.toPx()
                 val islandHeight = 46.dp.toPx()
+                val islandSurfaceTop = Color(weatherCondition.islandSurfaceTopHex)
+                val islandRimGlow = Color(weatherCondition.islandRimGlowHex)
 
                 drawOval(
                     brush = Brush.verticalGradient(
@@ -519,7 +524,7 @@ fun Nooki3DCenterpiece(
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF6D4C41),
+                            islandSurfaceTop,
                             Color(0xFF4E342E),
                             Color(0xFF3E2723)
                         ),
@@ -530,11 +535,72 @@ fun Nooki3DCenterpiece(
                     size = Size(islandWidth, islandHeight)
                 )
                 drawOval(
-                    color = auraColor.copy(alpha = 0.55f),
+                    color = islandRimGlow.copy(alpha = 0.72f),
                     topLeft = Offset(cx - islandWidth / 2f + 6.dp.toPx(), islandTopY - 9.dp.toPx()),
                     size = Size(islandWidth - 12.dp.toPx(), islandHeight - 6.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx())
+                    style = Stroke(width = 2.4.dp.toPx())
                 )
+
+                // Weather-specific surface details on the 3D Desk Island
+                when (weatherCondition) {
+                    WeatherCondition.MONSOON_RAIN -> {
+                        // Expanding rain ripples on the 3D desk island
+                        for (rIdx in 0..2) {
+                            val rippleProgress = ((happyParticlePhase / (2f * Math.PI.toFloat())) + rIdx * 0.33f) % 1f
+                            val rx = cx + (rIdx - 1) * 48.dp.toPx() + parallaxX * 0.2f
+                            val ry = islandTopY + 8.dp.toPx()
+                            val rw = (16f + rippleProgress * 36f).dp.toPx()
+                            val rh = rw * 0.36f
+                            drawOval(
+                                color = islandRimGlow.copy(alpha = (1f - rippleProgress) * 0.65f),
+                                topLeft = Offset(rx - rw / 2f, ry - rh / 2f),
+                                size = Size(rw, rh),
+                                style = Stroke(width = 1.6.dp.toPx())
+                            )
+                        }
+                    }
+
+                    WeatherCondition.MISTY_MOUNTAIN_SNOW -> {
+                        // Frosted snow-cap crescent along the front rim of the 3D desk island
+                        drawOval(
+                            color = Color(0xFFF0F9FF).copy(alpha = 0.42f),
+                            topLeft = Offset(cx - islandWidth * 0.42f, islandTopY - 6.dp.toPx()),
+                            size = Size(islandWidth * 0.84f, islandHeight * 0.55f)
+                        )
+                    }
+
+                    WeatherCondition.SUNLIT_BREEZE, WeatherCondition.GOLDEN_TWILIGHT -> {
+                        // Sunlit moss & wildflower buds along the 3D island edge
+                        val budOffsets = listOf(-72f, -48f, 54f, 76f)
+                        budOffsets.forEachIndexed { idx, dxDp ->
+                            val bx = cx + dxDp.dp.toPx() + parallaxX * 0.2f
+                            val by = islandTopY + (6 + (idx % 2) * 8).dp.toPx()
+                            drawCircle(
+                                color = LeafGreen.copy(alpha = 0.8f),
+                                radius = 5.dp.toPx(),
+                                center = Offset(bx, by)
+                            )
+                            drawCircle(
+                                color = islandRimGlow,
+                                radius = 2.6.dp.toPx(),
+                                center = Offset(bx, by - 2.dp.toPx())
+                            )
+                        }
+                    }
+
+                    WeatherCondition.STARRY_NIGHT_DEW -> {
+                        // Glowing night-dew firefly droplets resting on the island rim
+                        for (dIdx in -2..2) {
+                            val dx = cx + dIdx * 34.dp.toPx() + parallaxX * 0.2f
+                            val dy = islandTopY + 14.dp.toPx()
+                            drawCircle(
+                                color = islandRimGlow.copy(alpha = 0.65f),
+                                radius = 3.2.dp.toPx(),
+                                center = Offset(dx, dy)
+                            )
+                        }
+                    }
+                }
 
                 // 3. Dynamic Ambient Occlusion Ground Shadow
                 val shadowScale = (1f - (abs(jumpOffset) / 55.dp.toPx())).coerceIn(0.65f, 1.15f)

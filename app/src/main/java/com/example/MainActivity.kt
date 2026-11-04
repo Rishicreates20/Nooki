@@ -126,12 +126,15 @@ import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskSideEffect
 import com.example.presentation.mvi.DeskUiState
 import com.example.presentation.ui.components.ConsistencyStreakCard
+import com.example.presentation.ui.components.DynamicWeatherSkyBackdrop
+import com.example.presentation.ui.components.LocalWeatherEnvironmentBar
 import com.example.presentation.ui.components.Nooki3DCenterpiece
 import com.example.presentation.ui.components.NookiTasksAndProfileScreen
 import com.example.presentation.ui.components.TodoAndDoneTasksSection
 import com.example.presentation.ui.components.UserProfileAndStreakBannerChip
 import com.example.presentation.viewmodel.DeskPetViewModel
 import com.example.scheduler.AndroidExactAlarmScheduler
+import com.example.scheduler.NookiLocationWeatherProvider
 import com.example.scheduler.NookiSchedulerTelemetry
 import com.example.scheduler.NookiSensoryFeedbackManager
 import com.example.scheduler.NotificationHelper
@@ -144,6 +147,8 @@ import com.example.ui.theme.NightIndigo
 import com.example.ui.theme.Sindoor
 import com.example.ui.theme.ThreadIndigoLight
 import com.example.ui.theme.WashedCotton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -182,10 +187,51 @@ fun NookiMainApp(
     alarmScheduler: AndroidExactAlarmScheduler
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val scheme = MaterialTheme.colorScheme
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    val locationWeatherProvider = remember(context) {
+        NookiLocationWeatherProvider(context.applicationContext)
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        coroutineScope.launch {
+            val latestWeather = locationWeatherProvider.fetchLocalWeatherState()
+            viewModel.onIntent(DeskIntent.ApplyLocationWeatherUpdate(latestWeather))
+            if (!granted) {
+                snackbarHostState.showSnackbar("Using local solar weather fallback (location permission declined)")
+            }
+        }
+    }
+
+    val requestOrSyncLocationWeather: () -> Unit = {
+        if (locationWeatherProvider.hasLocationPermission()) {
+            coroutineScope.launch {
+                val latestWeather = locationWeatherProvider.fetchLocalWeatherState()
+                viewModel.onIntent(DeskIntent.ApplyLocationWeatherUpdate(latestWeather))
+            }
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    // Automatically sync initial weather from Location API if already permitted or local solar fallback
+    LaunchedEffect(locationWeatherProvider) {
+        val initialWeather = locationWeatherProvider.fetchLocalWeatherState()
+        viewModel.onIntent(DeskIntent.ApplyLocationWeatherUpdate(initialWeather))
+    }
 
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -311,69 +357,68 @@ fun NookiMainApp(
             }
         }
     ) { innerPadding ->
-        Box(
+        DynamicWeatherSkyBackdrop(
+            weatherState = uiState.weatherState,
+            appTheme = uiState.selectedTheme,
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            scheme.background,
-                            scheme.surface,
-                            scheme.background
-                        )
-                    )
-                )
-                .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter
+                .padding(innerPadding)
         ) {
-            when (selectedTab) {
-                0 -> {
-                    NookiThreadHomeScreen(
-                        uiState = uiState,
-                        hasNotificationPermission = hasNotificationPermission,
-                        onRequestNotificationPermission = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                when (selectedTab) {
+                    0 -> {
+                        NookiThreadHomeScreen(
+                            uiState = uiState,
+                            hasNotificationPermission = hasNotificationPermission,
+                            onRequestNotificationPermission = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onSyncGpsWeather = requestOrSyncLocationWeather,
+                            onStartVoiceCapture = {
+                                val voiceIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(
+                                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                    )
+                                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Tell Nooki in English, Hinglish, or हिंदी...")
+                                }
+                                runCatching { speechRecognizerLauncher.launch(voiceIntent) }
+                            },
+                            onOpenProfileAndTasksTab = { selectedTab = 1 },
+                            onIntent = viewModel::onIntent,
+                            onFireAlarmNow = { reminder ->
+                                val broadcastIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
+                                    action = AndroidExactAlarmScheduler.ACTION_TRIGGER_REMINDER_ALARM
+                                    putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
+                                    putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_TITLE, reminder.title)
+                                }
+                                context.sendBroadcast(broadcastIntent)
                             }
-                        },
-                        onStartVoiceCapture = {
-                            val voiceIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                )
-                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Tell Nooki in English, Hinglish, or हिंदी...")
-                            }
-                            runCatching { speechRecognizerLauncher.launch(voiceIntent) }
-                        },
-                        onOpenProfileAndTasksTab = { selectedTab = 1 },
-                        onIntent = viewModel::onIntent,
-                        onFireAlarmNow = { reminder ->
-                            val broadcastIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
-                                action = AndroidExactAlarmScheduler.ACTION_TRIGGER_REMINDER_ALARM
-                                putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
-                                putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_TITLE, reminder.title)
-                            }
-                            context.sendBroadcast(broadcastIntent)
-                        }
-                    )
-                }
-                1 -> {
-                    NookiTasksAndProfileScreen(
-                        uiState = uiState,
-                        onIntent = viewModel::onIntent
-                    )
-                }
-                else -> {
-                    NookiNoticesAndReliabilityScreen(
-                        uiState = uiState,
-                        onOpenExactAlarmSettings = {
-                            alarmScheduler.buildExactAlarmPermissionIntent()?.let { intent ->
-                                runCatching { context.startActivity(intent) }
-                            }
-                        },
-                        onIntent = viewModel::onIntent
-                    )
+                        )
+                    }
+                    1 -> {
+                        NookiTasksAndProfileScreen(
+                            uiState = uiState,
+                            onSyncGpsWeather = requestOrSyncLocationWeather,
+                            onIntent = viewModel::onIntent
+                        )
+                    }
+                    else -> {
+                        NookiNoticesAndReliabilityScreen(
+                            uiState = uiState,
+                            onOpenExactAlarmSettings = {
+                                alarmScheduler.buildExactAlarmPermissionIntent()?.let { intent ->
+                                    runCatching { context.startActivity(intent) }
+                                }
+                            },
+                            onIntent = viewModel::onIntent
+                        )
+                    }
                 }
             }
         }
@@ -383,6 +428,7 @@ fun NookiMainApp(
 /**
  * The signature Nooki Home Screen:
  * - User Profile & Consistency Streak Banner at the top
+ * - Local Weather & 3D Desk Environment Bar (Location API)
  * - Centered 3D Nooki Fox at the center
  * - "Tell Nooki: capture in one breath" bar with real-time "What Nooki understood" preview
  * - One continuous Thread dropping from Nooki's paw down the left of the screen
@@ -394,6 +440,7 @@ private fun NookiThreadHomeScreen(
     uiState: DeskUiState,
     hasNotificationPermission: Boolean,
     onRequestNotificationPermission: () -> Unit,
+    onSyncGpsWeather: () -> Unit,
     onStartVoiceCapture: () -> Unit,
     onOpenProfileAndTasksTab: () -> Unit,
     onIntent: (DeskIntent) -> Unit,
@@ -494,10 +541,20 @@ private fun NookiThreadHomeScreen(
                     onToggleHaptics = { onIntent(DeskIntent.ToggleHapticsEnabled) },
                     onOpenProfileTab = onOpenProfileAndTasksTab
                 )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                LocalWeatherEnvironmentBar(
+                    weatherState = uiState.weatherState,
+                    onSyncGpsWeather = onSyncGpsWeather,
+                    onSelectWeatherCondition = { condition ->
+                        onIntent(DeskIntent.SelectWeatherOverride(condition))
+                    }
+                )
             }
         }
 
-        // 2. Centered 3D Nooki Fox Companion (with Theme-Synced Happy State 3D Particles & Touch Gestures)
+        // 2. Centered 3D Nooki Fox Companion (with Theme-Synced Happy State 3D Particles, Weather Island & Touch Gestures)
         item {
             Box(
                 modifier = Modifier
@@ -509,6 +566,7 @@ private fun NookiThreadHomeScreen(
                     mood = uiState.petMood,
                     moodState = uiState.moodState,
                     appTheme = uiState.selectedTheme,
+                    weatherCondition = uiState.weatherState.condition,
                     speechText = uiState.speechBubbleText,
                     isAutoRotateEnabled = uiState.isAutoRotate3DEnabled,
                     petCombo = uiState.petInteractionCombo,

@@ -7,12 +7,14 @@ import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.UserProfileEntity
 import com.example.domain.model.ConsistencyStreakState
+import com.example.domain.model.LocalWeatherState
 import com.example.domain.model.MoodState
 import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiPetState
 import com.example.domain.model.PetGestureType
 import com.example.domain.model.SensoryCue
+import com.example.domain.model.WeatherCondition
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
 import com.example.domain.notice.NoticeSourceKind
@@ -31,7 +33,7 @@ enum class TaskBoardFilter(val label: String) {
 /**
  * Immutable UI State emitted by [com.example.presentation.viewmodel.DeskPetViewModel]'s
  * [kotlinx.coroutines.flow.StateFlow], including [moodState], [consistencyStreak],
- * [todoTasks], [doneTasks], [userProfile], [selectedTheme], [journalEntries], and sensory mute states.
+ * [todoTasks], [doneTasks], [userProfile], [selectedTheme], [journalEntries], [weatherState], and sensory mute states.
  */
 data class DeskUiState(
     val petState: NookiPetState = NookiPetState.IdleCozy(),
@@ -40,6 +42,7 @@ data class DeskUiState(
     val consistencyStreak: ConsistencyStreakState = ConsistencyStreakState(),
     val userProfile: UserProfileEntity = UserProfileEntity(),
     val selectedTheme: NookiAppTheme = NookiAppTheme.MIDNIGHT_COZY,
+    val weatherState: LocalWeatherState = LocalWeatherState(),
     val journalEntries: List<PetJournalEntryEntity> = emptyList(),
     val selectedJournalFilter: PetMilestoneType? = null,
     val isSoundEnabled: Boolean = true,
@@ -103,6 +106,8 @@ sealed interface DeskIntent {
     data object ToggleHapticsEnabled : DeskIntent
     data class PreviewSensoryCue(val cue: SensoryCue) : DeskIntent
     data class SelectAppTheme(val theme: NookiAppTheme) : DeskIntent
+    data class ApplyLocationWeatherUpdate(val weatherState: LocalWeatherState) : DeskIntent
+    data class SelectWeatherOverride(val condition: WeatherCondition?) : DeskIntent
     data class SelectJournalFilter(val milestoneType: PetMilestoneType?) : DeskIntent
     data class AddCustomJournalNote(
         val title: String,

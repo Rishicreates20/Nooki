@@ -13,11 +13,14 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.repository.ReminderRepository
 import com.example.domain.model.ConsistencyStreakCalculator
 import com.example.domain.model.HappinessTier
+import com.example.domain.model.LocalWeatherCalculator
+import com.example.domain.model.LocalWeatherState
 import com.example.domain.model.NookiAppTheme
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiStateMachine
 import com.example.domain.model.PetGestureType
 import com.example.domain.model.SensoryCue
+import com.example.domain.model.WeatherCondition
 import com.example.domain.notice.NookiNoticeFilter
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
@@ -59,6 +62,13 @@ class DeskPetViewModel(
         val breathInputText: String = "",
         val selectedTaskFilter: TaskBoardFilter = TaskBoardFilter.TODO,
         val selectedJournalFilter: PetMilestoneType? = null,
+        val weatherState: LocalWeatherState = LocalWeatherCalculator.computeFromLocation(
+            latitude = 19.0760,
+            longitude = 72.8777,
+            isFromLiveLocationApi = false,
+            hasLocationPermission = false
+        ),
+        val lastLiveLocationWeather: LocalWeatherState? = null,
         val celebratingUntilMillis: Long = 0L,
         val celebrationSpeech: String? = null,
         val lastEarnedXp: Int = 0,
@@ -196,7 +206,7 @@ class DeskPetViewModel(
             celebrationSpeech = local.celebrationSpeech,
             lastEarnedXp = local.lastEarnedXp,
             bonusPetTouches = local.petInteractionCombo,
-            bonusHappinessFromPlay = local.bonusHappinessFromPlay,
+            bonusHappinessFromPlay = (local.bonusHappinessFromPlay + local.weatherState.condition.moodHappinessBonus).coerceAtMost(28),
             activePlayGesture = local.activePlayGesture
         )
         val resolvedPetState = machineOutput.petState
@@ -227,6 +237,7 @@ class DeskPetViewModel(
             consistencyStreak = consistencyStreak,
             userProfile = syncedProfile,
             selectedTheme = resolvedTheme,
+            weatherState = local.weatherState,
             journalEntries = journalEntries,
             selectedJournalFilter = local.selectedJournalFilter,
             isSoundEnabled = syncedProfile.soundEnabled,
@@ -378,6 +389,80 @@ class DeskPetViewModel(
                     _sideEffects.send(
                         DeskSideEffect.ShowMessage("Applied '${intent.theme.displayName}' theme & particle colors")
                     )
+                }
+            }
+
+            is DeskIntent.ApplyLocationWeatherUpdate -> {
+                val incoming = intent.weatherState
+                val now = System.currentTimeMillis()
+                ephemeralState.update { state ->
+                    state.copy(
+                        weatherState = incoming,
+                        lastLiveLocationWeather = incoming,
+                        celebratingUntilMillis = now + 3_200L,
+                        celebrationSpeech = "${incoming.condition.badgeEmoji} ${incoming.condition.petReactionLine} (${incoming.localityName}, ${incoming.temperatureCelsius}°C)"
+                    )
+                }
+                viewModelScope.launch {
+                    if (incoming.isFromLiveLocationApi) {
+                        _sideEffects.send(
+                            DeskSideEffect.ShowMessage(
+                                "Synced local weather: ${incoming.condition.displayName} (${incoming.temperatureCelsius}°C) in ${incoming.localityName}"
+                            )
+                        )
+                    }
+                }
+            }
+
+            is DeskIntent.SelectWeatherOverride -> {
+                val now = System.currentTimeMillis()
+                val overrideCondition = intent.condition
+                if (overrideCondition == null) {
+                    val restored = ephemeralState.value.lastLiveLocationWeather
+                        ?: LocalWeatherCalculator.computeFromLocation(
+                            latitude = ephemeralState.value.weatherState.latitude,
+                            longitude = ephemeralState.value.weatherState.longitude,
+                            nowMillis = now,
+                            isFromLiveLocationApi = ephemeralState.value.weatherState.isFromLiveLocationApi,
+                            hasLocationPermission = ephemeralState.value.weatherState.hasLocationPermission
+                        )
+                    ephemeralState.update {
+                        it.copy(
+                            weatherState = restored.copy(isManualOverride = false),
+                            celebratingUntilMillis = now + 2_600L,
+                            celebrationSpeech = "${restored.condition.badgeEmoji} Returned to Auto GPS weather (${restored.condition.displayName} • ${restored.temperatureCelsius}°C)!"
+                        )
+                    }
+                } else {
+                    val current = ephemeralState.value.weatherState
+                    val adjustedTemp = when (overrideCondition) {
+                        WeatherCondition.MISTY_MOUNTAIN_SNOW -> 4
+                        WeatherCondition.MONSOON_RAIN -> 24
+                        WeatherCondition.STARRY_NIGHT_DEW -> 19
+                        WeatherCondition.GOLDEN_TWILIGHT -> 25
+                        WeatherCondition.SUNLIT_BREEZE -> 28
+                    }
+                    val updatedWeather = current.copy(
+                        condition = overrideCondition,
+                        temperatureCelsius = adjustedTemp,
+                        isManualOverride = true,
+                        lastUpdatedMillis = now
+                    )
+                    ephemeralState.update {
+                        it.copy(
+                            weatherState = updatedWeather,
+                            celebratingUntilMillis = now + 3_000L,
+                            celebrationSpeech = "${overrideCondition.badgeEmoji} ${overrideCondition.petReactionLine}"
+                        )
+                    }
+                    viewModelScope.launch {
+                        emitSensoryCue(SensoryCue.KNOT_TIED)
+                        _sideEffects.send(
+                            DeskSideEffect.ShowMessage(
+                                "3D Environment set to ${overrideCondition.displayName} (+${overrideCondition.moodHappinessBonus}% Mood)"
+                            )
+                        )
+                    }
                 }
             }
 

@@ -299,4 +299,30 @@ class ExampleUnitTest {
         assertEquals("✨", personalityEntry.badgeEmoji)
         assertEquals("Pet Personality Shift", personalityEntry.milestoneType.categoryLabel)
     }
+
+    @Test
+    fun localWeatherCalculator_computesDistinctWeatherConditionsFromGpsCoordinates() {
+        val shimlaAlpine = com.example.domain.model.LocalWeatherCalculator.computeFromLocation(
+            latitude = 31.1048,
+            longitude = 77.1734,
+            altitudeMeters = 2200.0,
+            nowMillis = 1762260000000L
+        )
+        assertEquals(
+            com.example.domain.model.WeatherCondition.MISTY_MOUNTAIN_SNOW,
+            shimlaAlpine.condition
+        )
+        assertEquals("Shimla Hills", shimlaAlpine.localityName)
+        assertTrue(shimlaAlpine.formattedCoordinates.contains("31.1°N"))
+
+        val mumbaiCoastal = com.example.domain.model.LocalWeatherCalculator.computeFromLocation(
+            latitude = 19.0760,
+            longitude = 72.8777,
+            altitudeMeters = 14.0,
+            nowMillis = 1762260000000L
+        )
+        assertEquals("Mumbai", mumbaiCoastal.localityName)
+        assertTrue(mumbaiCoastal.temperatureCelsius > shimlaAlpine.temperatureCelsius)
+        assertTrue(mumbaiCoastal.condition.moodHappinessBonus >= 4)
+    }
 }
