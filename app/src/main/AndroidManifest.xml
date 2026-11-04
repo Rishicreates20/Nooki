@@ -55,15 +55,21 @@
             </intent-filter>
         </activity>
 
-        <!-- Exact Alarm Trigger Receiver -->
+        <!-- Primary Exact Alarm Trigger Receiver -->
         <receiver
-            android:name=".scheduler.receiver.ReminderAlarmReceiver"
+            android:name=".scheduler.receiver.AlarmReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.nooki.ACTION_TRIGGER_REMINDER_ALARM" />
             </intent-filter>
         </receiver>
+
+        <!-- Alias Exact Alarm Trigger Receiver -->
+        <receiver
+            android:name=".scheduler.receiver.ReminderAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
         <!-- Notification & In-App Quick Action Receiver (Complete / Snooze / Dismiss) -->
         <receiver
