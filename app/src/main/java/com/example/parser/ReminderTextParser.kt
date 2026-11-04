@@ -282,9 +282,25 @@ object ReminderTextParser {
                 val (month, day, _) = absoluteDate!!
                 cal.set(Calendar.DAY_OF_MONTH, 1) // so Jan 31 -> "feb 3" doesn't roll into March
                 cal.set(Calendar.MONTH, month)
-                cal.set(Calendar.DAY_OF_MONTH, day.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
                 applyClock()
-                if (cal.timeInMillis <= nowMillis) cal.add(Calendar.YEAR, 1)
+                fun placeDay() = cal.set(
+                    Calendar.DAY_OF_MONTH,
+                    day.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+                )
+                placeDay()
+                if (cal.timeInMillis <= nowMillis) {
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    cal.add(Calendar.YEAR, 1)
+                    placeDay()
+                }
+                // "feb 29" waits for the next leap year instead of landing on the 28th.
+                if (month == Calendar.FEBRUARY && day == 29) {
+                    while (cal.getActualMaximum(Calendar.DAY_OF_MONTH) < 29) {
+                        cal.set(Calendar.DAY_OF_MONTH, 1)
+                        cal.add(Calendar.YEAR, 1)
+                    }
+                    cal.set(Calendar.DAY_OF_MONTH, 29)
+                }
             }
             else -> {
                 applyClock()
