@@ -2,20 +2,21 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Cozy Twilight Desk & Warm Amber Palette for Nooki
-val NookiAmberPrimary = Color(0xFFF59E0B)
-val NookiAmberLight = Color(0xFFFBBF24)
-val NookiCoralAccent = Color(0xFFFB7185)
-val NookiMintSuccess = Color(0xFF34D399)
-val NookiSkyInfo = Color(0xFF38BDF8)
+// The thread palette from the product brief.
+val NeelIndigo = Color(0xFF1C2254)
+val NightIndigo = Color(0xFF12153A)
+val WashedCotton = Color(0xFFEEF0FA)
+val Marigold = Color(0xFFFFAE1A)
+val Sindoor = Color(0xFFE23B3B)
+val Leaf = Color(0xFF1F9D6B)
 
-val NookiDarkBackground = Color(0xFF171324)
-val NookiDarkSurface = Color(0xFF231D36)
-val NookiDarkSurfaceVariant = Color(0xFF2F2748)
-val NookiCreamText = Color(0xFFFFFBEB)
-val NookiMutedLavender = Color(0xFFC4B5FD)
-
-val NookiLightBackground = Color(0xFFFFFBF5)
-val NookiLightSurface = Color(0xFFFFF4E6)
-val NookiLightSurfaceVariant = Color(0xFFFDE68A)
-val NookiDeepInk = Color(0xFF1E1B4B)
+// Quiet supporting tones derived from the palette.
+val IndigoMist = Color(0xFF5A6197)
+val IndigoLine = Color(0xFF3C4485)
+val CottonLine = Color(0xFFB9BEDC)
+val NightSurface = Color(0xFF1B1F4A)
+val CottonSurface = Color(0xFFFFFFFF)
+val MarigoldOnDark = Color(0xFFFFC052)
+val SindoorOnDark = Color(0xFFFF6B5E)
+val LeafOnDark = Color(0xFF39C48D)
+val IndigoOnDark = Color(0xFF9EA6F0)

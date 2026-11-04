@@ -125,7 +125,7 @@ class AndroidExactAlarmScheduler(
 
         val precision = AlarmPolicy.precisionFor(
             isCritical = reminder.priority == ReminderPriority.URGENT,
-            isMedicine = false, // Medicine reminders arrive with the new data model.
+            isMedicine = reminder.kind.exactAlarm,
             exactAllowed = canScheduleExactAlarms()
         )
 

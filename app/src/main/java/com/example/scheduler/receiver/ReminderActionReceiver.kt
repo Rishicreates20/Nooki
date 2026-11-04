@@ -54,11 +54,12 @@ class ReminderActionReceiver : BroadcastReceiver() {
                     }
 
                     AndroidExactAlarmScheduler.ACTION_DISMISS_REMINDER -> {
-                        repository.dismissReminder(reminderId)
+                        // Swiped away is not done: it moves to "You missed" (medicine asks again).
+                        repository.markMissed(reminderId)
                         NotificationHelper.cancelNotification(appContext, reminderId)
                         NookiSchedulerTelemetry.record(
                             source = "ReminderActionReceiver",
-                            message = "Dismissed reminder #$reminderId"
+                            message = "Reminder #$reminderId swiped away; moved to You missed"
                         )
                     }
                 }

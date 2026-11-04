@@ -99,18 +99,17 @@ object NotificationHelper {
             requestCodeOffset = 300_000
         )
 
-        val bodyText = buildString {
-            append("Nooki is tapping your desk! ")
-            if (reminder.notes.isNotBlank()) {
-                append(reminder.notes)
+        val bodyText = reminder.notes.ifBlank {
+            if (reminder.kind.needsConfirmation) {
+                "Tap Done once you have taken it. Nooki will ask again if not."
             } else {
-                append("Complete this ${reminder.category.label.lowercase()} for +${reminder.petMoodImpact} XP.")
+                "Tap Done when it's done. Swiping this away keeps it in You missed."
             }
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_ALARMS)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("🐾 ${reminder.title}")
+            .setContentTitle(reminder.title)
             .setContentText(bodyText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
