@@ -250,7 +250,8 @@ object ReminderTextParser {
         }
 
         val hasDay = dayOffset != null || weekday != null || absoluteDate != null
-        if (!hasDay && hour == null) {
+        // "today" alone has no sensible default hour (9 AM may already be gone), so ask instead.
+        if ((!hasDay || dayOffset == 0) && hour == null) {
             return ParsedReminder(cleanTitle(text, original), null, priority)
         }
 

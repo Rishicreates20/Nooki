@@ -95,6 +95,13 @@ class ReminderTextParserTest {
     }
 
     @Test
+    fun `today without a time asks for one`() {
+        val r = parse("dentist today")
+        assertEquals("Dentist", r.title)
+        assertNull(r.triggerAtMillis)
+    }
+
+    @Test
     fun `title words that look like days are kept`() {
         assertEquals("Sit in the sun", parse("sit in the sun at 4pm").title)
         assertEquals("Evening walk", parse("evening walk at 6pm").title)
