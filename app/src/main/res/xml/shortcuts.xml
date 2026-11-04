@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="tell_nooki"
+        android:shortcutShortLabel="@string/tell_nooki"
+        android:shortcutLongLabel="@string/tell_nooki">
+        <intent
+            android:action="com.example.nooki.TELL"
+            android:targetClass="com.example.MainActivity"
+            android:targetPackage="com.aistudio.nookipet.r8k2m" />
+    </shortcut>
+</shortcuts>

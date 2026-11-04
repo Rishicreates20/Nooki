@@ -18,6 +18,13 @@ sealed class ScheduleResult {
         val mode: String = "setAlarmClock / setExactAndAllowWhileIdle"
     ) : ScheduleResult()
 
+    /** Normal reminders: inexact by design, so the phone can batch wake-ups. */
+    data class InexactScheduled(
+        val reminderId: Long,
+        val triggerAtMillis: Long
+    ) : ScheduleResult()
+
+    /** A critical reminder that had to be scheduled inexactly because exact alarms are not allowed. */
     data class InexactFallbackScheduled(
         val reminderId: Long,
         val triggerAtMillis: Long,

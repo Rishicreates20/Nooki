@@ -5,54 +5,68 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-private val NookiDarkColorScheme = darkColorScheme(
-    primary = NookiAmberLight,
-    onPrimary = NookiDeepInk,
-    primaryContainer = Color(0xFF452708),
-    onPrimaryContainer = Color(0xFFFDE68A),
-    secondary = NookiSkyInfo,
-    onSecondary = NookiDeepInk,
-    secondaryContainer = Color(0xFF0C4A6E),
-    onSecondaryContainer = Color(0xFFE0F2FE),
-    tertiary = NookiCoralAccent,
-    onTertiary = NookiDeepInk,
-    background = NookiDarkBackground,
-    onBackground = NookiCreamText,
-    surface = NookiDarkSurface,
-    onSurface = NookiCreamText,
-    surfaceVariant = NookiDarkSurfaceVariant,
-    onSurfaceVariant = NookiMutedLavender
+/** The thread's colours, adjusted for light and dark so they keep their meaning and contrast. */
+@Immutable
+data class ThreadColors(
+    val missed: Color,
+    val forgot: Color,
+    val todo: Color,
+    val done: Color,
+    val quiet: Color,
 )
 
-private val NookiLightColorScheme = lightColorScheme(
-    primary = NookiAmberPrimary,
-    onPrimary = Color.White,
-    primaryContainer = NookiLightSurfaceVariant,
-    onPrimaryContainer = NookiDeepInk,
-    secondary = Color(0xFF0284C7),
-    onSecondary = Color.White,
-    tertiary = Color(0xFFE11D48),
-    background = NookiLightBackground,
-    onBackground = NookiDeepInk,
-    surface = NookiLightSurface,
-    onSurface = NookiDeepInk,
-    surfaceVariant = Color(0xFFF3E8FF),
-    onSurfaceVariant = Color(0xFF4C1D95)
+private val LightThread = ThreadColors(missed = Sindoor, forgot = Color(0xFFB86E00), todo = NeelIndigo, done = Leaf, quiet = CottonLine)
+private val DarkThread = ThreadColors(missed = SindoorOnDark, forgot = MarigoldOnDark, todo = IndigoOnDark, done = LeafOnDark, quiet = IndigoLine)
+
+val LocalThreadColors = staticCompositionLocalOf { LightThread }
+
+private val LightColors = lightColorScheme(
+    primary = NeelIndigo,
+    onPrimary = WashedCotton,
+    secondary = Marigold,
+    onSecondary = NightIndigo,
+    tertiary = Leaf,
+    error = Sindoor,
+    background = WashedCotton,
+    onBackground = NeelIndigo,
+    surface = CottonSurface,
+    onSurface = NeelIndigo,
+    surfaceVariant = Color(0xFFE2E5F5),
+    onSurfaceVariant = IndigoMist,
+    outline = CottonLine,
+)
+
+private val DarkColors = darkColorScheme(
+    primary = IndigoOnDark,
+    onPrimary = NightIndigo,
+    secondary = Marigold,
+    onSecondary = NightIndigo,
+    tertiary = LeafOnDark,
+    error = SindoorOnDark,
+    background = NightIndigo,
+    onBackground = WashedCotton,
+    surface = NightSurface,
+    onSurface = WashedCotton,
+    surfaceVariant = Color(0xFF252A5C),
+    onSurfaceVariant = Color(0xFFB4B9DE),
+    outline = IndigoLine,
 )
 
 @Composable
-fun MyApplicationTheme(
+fun NookiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    // Default to cozy twilight dark desk theme for Nooki
-    val colorScheme = if (darkTheme) NookiDarkColorScheme else NookiDarkColorScheme
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalThreadColors provides if (darkTheme) DarkThread else LightThread) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = Typography,
+            content = content,
+        )
+    }
 }

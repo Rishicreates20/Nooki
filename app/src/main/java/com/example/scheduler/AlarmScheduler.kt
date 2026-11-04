@@ -8,7 +8,10 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.net.toUri
 import com.example.MainActivity
+import com.example.core.alarm.AlarmPolicy
+import com.example.core.alarm.AlarmPrecision
 import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.toEntity
 import com.example.domain.model.Reminder
 import com.example.scheduler.receiver.AlarmReceiver
@@ -33,8 +36,8 @@ interface AlarmScheduler {
  * Production Android [AlarmManager] implementation of [AlarmScheduler].
  *
  * - Verifies `AlarmManager.canScheduleExactAlarms()` on Android 12+ (API 31+).
- * - Uses [AlarmManager.setAlarmClock] / [AlarmManager.setExactAndAllowWhileIdle] for
- *   Doze-piercing exact delivery when permitted.
+ * - Uses [AlarmPolicy]: [AlarmManager.setAlarmClock] only for medicine and critical
+ *   reminders, and inexact [AlarmManager.setAndAllowWhileIdle] for everything else.
  * - Gracefully falls back to [AlarmManager.setAndAllowWhileIdle] if the user revokes
  *   `SCHEDULE_EXACT_ALARM` at runtime.
  */
@@ -63,12 +66,18 @@ class AndroidAlarmScheduler(
             errorMessage = "AlarmManager service unavailable on this device."
         )
 
+        WarningScheduler.scheduleNext(context, reminder)
         val pendingIntent = createTriggerPendingIntent(reminder)
-        val safeTriggerMillis =
-            reminder.triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
+        val safeTriggerMillis = reminder.triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
+
+        val precision = AlarmPolicy.precisionFor(
+            isCritical = reminder.priority == ReminderPriority.URGENT,
+            isMedicine = reminder.kind.exactAlarm,
+            exactAllowed = canScheduleExactAlarms()
+        )
 
         return try {
-            if (canScheduleExactAlarms()) {
+            if (precision == AlarmPrecision.EXACT) {
                 val showIntent = PendingIntent.getActivity(
                     context,
                     reminder.id.toInt(),
@@ -78,6 +87,7 @@ class AndroidAlarmScheduler(
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
+                // Medicine and critical items: a late alarm causes harm, so pierce Doze.
                 val clockInfo = AlarmManager.AlarmClockInfo(safeTriggerMillis, showIntent)
                 manager.setAlarmClock(clockInfo, pendingIntent)
 
@@ -90,22 +100,36 @@ class AndroidAlarmScheduler(
                     triggerAtMillis = safeTriggerMillis
                 )
             } else {
+                // Everything else: an inexact alarm the phone can batch. Still fires in Doze.
                 manager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerMillis,
                     pendingIntent
                 )
+                val needsPermission = precision == AlarmPrecision.INEXACT_UNTIL_ALLOWED
                 NookiSchedulerTelemetry.record(
                     source = "AlarmScheduler",
-                    message = "Scheduled INEXACT fallback #${reminder.id} ('${reminder.title}') - SCHEDULE_EXACT_ALARM not granted",
-                    isWarning = true
+                    message = if (needsPermission) {
+                        "Scheduled critical #${reminder.id} ('${reminder.title}') inexactly - exact alarms not allowed yet"
+                    } else {
+                        "Scheduled inexact alarm #${reminder.id} ('${reminder.title}') for ${formatTime(safeTriggerMillis)}"
+                    },
+                    isWarning = needsPermission
                 )
-                ScheduleResult.InexactFallbackScheduled(
-                    reminderId = reminder.id,
-                    triggerAtMillis = safeTriggerMillis
-                )
+                if (needsPermission) {
+                    ScheduleResult.InexactFallbackScheduled(
+                        reminderId = reminder.id,
+                        triggerAtMillis = safeTriggerMillis
+                    )
+                } else {
+                    ScheduleResult.InexactScheduled(
+                        reminderId = reminder.id,
+                        triggerAtMillis = safeTriggerMillis
+                    )
+                }
             }
         } catch (se: SecurityException) {
+            // Fallback in case permission state changed mid-call
             runCatching {
                 manager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
@@ -137,6 +161,7 @@ class AndroidAlarmScheduler(
     }
 
     override fun cancel(reminderId: Long) {
+        WarningScheduler.cancel(context, reminderId)
         val manager = alarmManager ?: return
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             action = ACTION_TRIGGER_REMINDER_ALARM

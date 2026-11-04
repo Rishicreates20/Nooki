@@ -34,6 +34,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
 
                 val report = repository.reconcileAndRescheduleAlarms()
+                com.example.rhythm.DailyRhythm.schedule(appContext)
+                com.example.widget.NookiWidget.refresh(appContext)
                 NookiSchedulerTelemetry.record(
                     source = "BootCompletedReceiver",
                     message = "Processed '$action': rescheduled=${report.rescheduledCount}, markedMissed=${report.markedMissedCount}, exactPermitted=${report.exactAlarmsPermitted}"

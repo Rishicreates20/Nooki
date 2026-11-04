@@ -1,17 +1,10 @@
 <resources>
     <string name="app_name">Nooki</string>
-    <string name="nooki_subtitle">The Desk-Pet Reminder</string>
-    <string name="channel_alarms_name">Nooki Desk-Pet Reminders</string>
-    <string name="channel_alarms_description">Exact desk-pet reminder alerts, chimes, and task nudges from Nooki</string>
-    <string name="action_complete">Complete (+XP)</string>
-    <string name="action_snooze">Snooze 5m</string>
+    <string name="tell_nooki">Tell Nooki</string>
+    <string name="widget_description">Nooki\'s mood and what needs you today</string>
+    <string name="channel_alarms_name">Reminders</string>
+    <string name="channel_alarms_description">The things you asked Nooki to remind you about</string>
+    <string name="action_complete">Done</string>
+    <string name="action_snooze">In 5 min</string>
     <string name="action_dismiss">Dismiss</string>
-    <string name="tab_desk_pet">Desk Pet</string>
-    <string name="tab_scheduler_lab">Milestone 1 Lab</string>
-    <string name="add_reminder_title">New Desk Reminder</string>
-    <string name="input_reminder_hint">e.g. Drink warm tea in 15 mins</string>
-    <string name="btn_schedule_exact">Schedule Exact Alarm</string>
-    <string name="btn_fire_test_alarm">Fire Test Alarm Now</string>
-    <string name="btn_simulate_boot">Simulate Boot Recovery</string>
-    <string name="empty_reminders_tip">Nooki is resting peacefully on your desk. Add a reminder below to keep Nooki energized!</string>
 </resources>

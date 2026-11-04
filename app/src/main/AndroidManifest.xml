@@ -2,7 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Exact Alarm Scheduling, Boot Recovery, and Notification Delivery -->
+    <!-- Trust: no network access, ever. Stripped even if a library requests it; the build also
+         fails if it appears in the merged manifest (see app/build.gradle.kts). -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <!-- Exact alarms are only used for medicine and critical items, and only asked for when the
+         person creates one. Everything else uses inexact alarms the phone can batch. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -28,6 +34,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Long press on the app icon: "Tell Nooki" -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="com.example.nooki.TELL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Share any text to Nooki -->
+            <intent-filter android:label="@string/tell_nooki">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Select text in any app, then "Tell Nooki" -->
+            <intent-filter android:label="@string/tell_nooki">
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
@@ -74,6 +98,44 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- Warnings ahead of the day (inexact) -->
+        <receiver android:name=".scheduler.receiver.WarningReceiver" android:exported="false" />
+
+        <!-- Morning brief and evening wrap -->
+        <receiver android:name=".rhythm.DailyRhythmReceiver" android:exported="false" />
+
+        <!-- Home-screen widget -->
+        <receiver android:name=".widget.NookiWidgetReceiver" android:exported="true" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/nooki_widget_info" />
+        </receiver>
+
+        <!-- Quick settings tile -->
+        <service
+            android:name=".widget.TellNookiTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_foreground"
+            android:label="@string/tell_nooki"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Nooki notices: missed calls, unread messages, bills. Enabled only by the person, after
+             the in-app disclosure. Keeps who/when or bill name/amount/date; never content or OTPs. -->
+        <service
+            android:name=".notice.NookiNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 

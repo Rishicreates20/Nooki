@@ -46,6 +46,14 @@ jobs:
             app/build/outputs/apk/release/app-release.apk
           retention-days: 14
 
+      - name: Upload Room schemas
+        # Commit these to app/schemas so every database upgrade can be migration-tested.
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+          if-no-files-found: ignore
+
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v4

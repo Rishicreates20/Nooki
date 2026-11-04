@@ -1,5 +1,8 @@
 package com.example.data.repository
 
+import com.example.core.parse.ParsedReminder
+import com.example.core.parse.PriorityHint
+import com.example.core.schedule.WorkflowSchedule
 import com.example.data.local.dao.ReminderDao
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
@@ -8,6 +11,7 @@ import com.example.data.local.entity.ReminderStatus
 import com.example.scheduler.ExactAlarmScheduler
 import com.example.scheduler.ScheduleResult
 import kotlinx.coroutines.flow.Flow
+import java.util.Calendar
 
 /**
  * Outcome of a Boot / TimeChange recovery pass across persisted reminders.
@@ -39,6 +43,18 @@ interface ReminderRepository {
         recurrenceMinutes: Int? = null
     ): Pair<ReminderEntity, ScheduleResult>
 
+    /** Saves what "Tell Nooki" understood. Kept even without a time; scheduled only when it has one. */
+    suspend fun saveParsed(parsed: ParsedReminder, rawInput: String): Pair<ReminderEntity, ScheduleResult?>
+
+    /** Evening wrap: move everything not done to tomorrow in one tap. Items with no time get 9 am. */
+    suspend fun moveToTomorrow(ids: List<Long>, nowMillis: Long = System.currentTimeMillis())
+
+    /**
+     * The notification was swiped away. That does not mean done: it moves to "You missed", and a
+     * repeating chain continues. Medicine asks again (up to [MEDICINE_MAX_ASKS]) before giving up.
+     */
+    suspend fun markMissed(id: Long, nowMillis: Long = System.currentTimeMillis())
+
     suspend fun markRinging(id: Long): ReminderEntity?
     suspend fun completeReminder(id: Long): ReminderEntity?
     suspend fun snoozeReminder(id: Long, snoozeMinutes: Int = 5): Pair<ReminderEntity, ScheduleResult>?
@@ -53,6 +69,10 @@ interface ReminderRepository {
  * Production implementation of [ReminderRepository] that guarantees atomic coordination
  * between [ReminderDao] and [ExactAlarmScheduler].
  */
+/** Medicine asks again this many times before it stays in "You missed". */
+const val MEDICINE_MAX_ASKS = 3
+const val MEDICINE_ASK_AGAIN_MILLIS = 10 * 60_000L
+
 class ReminderRepositoryImpl(
     private val reminderDao: ReminderDao,
     private val alarmScheduler: ExactAlarmScheduler
@@ -92,6 +112,102 @@ class ReminderRepositoryImpl(
         return persisted to scheduleResult
     }
 
+    override suspend fun saveParsed(
+        parsed: ParsedReminder,
+        rawInput: String
+    ): Pair<ReminderEntity, ScheduleResult?> {
+        val now = System.currentTimeMillis()
+        val trigger = parsed.triggerAtMillis
+        val priority = when (parsed.priorityHint) {
+            PriorityHint.URGENT -> ReminderPriority.URGENT
+            PriorityHint.HIGH -> ReminderPriority.HIGH
+            null -> ReminderPriority.MEDIUM
+        }
+        val draft = ReminderEntity(
+            title = parsed.title.ifBlank { rawInput.trim() },
+            rawInput = rawInput.trim(),
+            triggerAtMillis = trigger ?: now,
+            createdAtMillis = now,
+            priority = priority,
+            category = ReminderCategory.CUSTOM,
+            status = ReminderStatus.SCHEDULED,
+            recurrenceMinutes = parsed.recurrenceMinutes,
+            petMoodImpact = priority.xpReward,
+            kind = parsed.kind,
+            leadMinutes = WorkflowSchedule.encodeLeadTimes(parsed.leadMinutes),
+            recurrenceRule = parsed.recurrenceRule,
+            hasTime = trigger != null
+        )
+        val id = reminderDao.upsertReminder(draft)
+        val persisted = draft.copy(id = id)
+        val result = if (persisted.hasTime) alarmScheduler.scheduleExact(persisted) else null
+        return persisted to result
+    }
+
+    override suspend fun moveToTomorrow(ids: List<Long>, nowMillis: Long) {
+        for (id in ids) {
+            val existing = reminderDao.getReminderById(id) ?: continue
+            if (existing.status == ReminderStatus.COMPLETED || existing.status == ReminderStatus.CANCELLED) continue
+            val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+            if (existing.hasTime) {
+                val clock = Calendar.getInstance().apply { timeInMillis = existing.triggerAtMillis }
+                cal.set(Calendar.HOUR_OF_DAY, clock.get(Calendar.HOUR_OF_DAY))
+                cal.set(Calendar.MINUTE, clock.get(Calendar.MINUTE))
+            } else {
+                cal.set(Calendar.HOUR_OF_DAY, 9)
+                cal.set(Calendar.MINUTE, 0)
+            }
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            alarmScheduler.cancel(id)
+            val moved = existing.copy(
+                triggerAtMillis = cal.timeInMillis,
+                hasTime = true,
+                status = ReminderStatus.SCHEDULED,
+                missedAtMillis = null
+            )
+            reminderDao.updateReminder(moved)
+            alarmScheduler.scheduleExact(moved)
+        }
+    }
+
+    override suspend fun markMissed(id: Long, nowMillis: Long) {
+        val existing = reminderDao.getReminderById(id) ?: return
+        if (existing.status == ReminderStatus.COMPLETED || existing.status == ReminderStatus.CANCELLED) return
+        alarmScheduler.cancel(id)
+        if (existing.kind.needsConfirmation && existing.confirmAttempts < MEDICINE_MAX_ASKS) {
+            val again = existing.copy(
+                triggerAtMillis = nowMillis + MEDICINE_ASK_AGAIN_MILLIS,
+                status = ReminderStatus.SNOOZED,
+                confirmAttempts = existing.confirmAttempts + 1
+            )
+            reminderDao.updateReminder(again)
+            alarmScheduler.scheduleExact(again)
+            return
+        }
+        reminderDao.updateReminder(existing.copy(status = ReminderStatus.MISSED, missedAtMillis = nowMillis))
+        scheduleNextOccurrence(existing, nowMillis)
+    }
+
+    /** Repeating reminders survive being done or ignored: the chain always continues. */
+    private suspend fun scheduleNextOccurrence(existing: ReminderEntity, nowMillis: Long) {
+        val rule = existing.recurrenceRule ?: return
+        val next = WorkflowSchedule.nextOccurrence(existing.triggerAtMillis, rule, nowMillis)
+        val draft = existing.copy(
+            id = 0L,
+            triggerAtMillis = next,
+            createdAtMillis = nowMillis,
+            completedAtMillis = null,
+            status = ReminderStatus.SCHEDULED,
+            snoozeCount = 0,
+            missedAtMillis = null,
+            confirmAttempts = 0
+        )
+        val id = reminderDao.upsertReminder(draft)
+        alarmScheduler.scheduleExact(draft.copy(id = id))
+    }
+
     override suspend fun markRinging(id: Long): ReminderEntity? {
         val existing = reminderDao.getReminderById(id) ?: return null
         if (existing.status == ReminderStatus.COMPLETED || existing.status == ReminderStatus.CANCELLED) {
@@ -124,6 +240,7 @@ class ReminderRepositoryImpl(
                 recurrenceMinutes = recurrenceMins
             )
         }
+        scheduleNextOccurrence(existing, now)
         return existing.copy(status = ReminderStatus.COMPLETED, completedAtMillis = now)
     }
 
@@ -174,16 +291,18 @@ class ReminderRepositoryImpl(
         var missed = 0
 
         for (reminder in pending) {
+            // No time yet: nothing to ring. It waits for the evening wrap.
+            if (!reminder.hasTime) continue
             // Grace window of 15 seconds for alarms right around current time
             if (reminder.triggerAtMillis > nowMillis - 15_000L && reminder.status != ReminderStatus.RINGING) {
                 alarmScheduler.scheduleExact(reminder)
                 rescheduled++
             } else if (reminder.triggerAtMillis <= nowMillis - 15_000L && reminder.status != ReminderStatus.RINGING) {
-                reminderDao.updateStatus(
-                    id = reminder.id,
-                    status = ReminderStatus.MISSED,
-                    completedAtMillis = null
+                reminderDao.updateReminder(
+                    reminder.copy(status = ReminderStatus.MISSED, missedAtMillis = nowMillis)
                 )
+                // A missed rent reminder does not end the monthly chain.
+                scheduleNextOccurrence(reminder, nowMillis)
                 missed++
             }
         }

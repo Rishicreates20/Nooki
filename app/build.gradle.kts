@@ -1,12 +1,9 @@
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.google.services)
 }
 
 android {
@@ -135,15 +132,8 @@ android {
   }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
-}
-
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
+// Room writes each schema version to app/schemas so migrations can be tested against it.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
@@ -163,7 +153,9 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
-  // implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.datastore.preferences)
+  // Home-screen widget
+  implementation(libs.androidx.glance.appwidget)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -210,3 +202,33 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
 }
+
+// -------------------------------------------------------------------------------------------------
+// Trust rule: Nooki ships WITHOUT the internet permission, so nothing it notices can leave the phone.
+// The main manifest strips INTERNET even if a library asks for it (tools:node="remove"), and this
+// check fails the build if the merged manifest of any app variant still declares it.
+// -------------------------------------------------------------------------------------------------
+tasks
+  .matching { it.name.matches(Regex("process(Debug|Release)MainManifest")) }
+  .configureEach {
+    // Locals only: the doLast lambda must not capture script objects (configuration cache).
+    val forbiddenPermissions = listOf("android.permission.INTERNET")
+    val mergedManifests = outputs.files
+    val taskName = name
+    doLast {
+      val manifests = mergedManifests.asFileTree.matching { include("**/AndroidManifest.xml") }.files
+      check(manifests.isNotEmpty()) { "Nooki: $taskName produced no merged manifest to check." }
+      manifests.forEach { manifest ->
+        val xml = manifest.readText()
+        forbiddenPermissions.forEach { permission ->
+          val declared = Regex("<uses-permission[^>]*android:name=\"${Regex.escape(permission)}\"").containsMatchIn(xml)
+          if (declared) {
+            throw GradleException(
+              "Nooki must not ship with $permission (found in ${manifest.path}). " +
+                "Everything stays on the phone; remove the dependency or permission that added it."
+            )
+          }
+        }
+      }
+    }
+  }

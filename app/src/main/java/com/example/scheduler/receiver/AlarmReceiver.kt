@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 /**
  * Primary [BroadcastReceiver] triggered when an exact [android.app.AlarmManager] alarm fires.
  * Uses [goAsync] with an IO [CoroutineScope] to safely transition the reminder to `RINGING`
- * in [AppDatabase] and dispatch a high-priority heads-up notification + haptic pulse.
+ * in [AppDatabase] and post the reminder notification, then refresh the home screen widget.
  */
 open class AlarmReceiver : BroadcastReceiver() {
 
@@ -47,6 +47,7 @@ open class AlarmReceiver : BroadcastReceiver() {
                         isWarning = true
                     )
                 }
+                com.example.widget.NookiWidget.refresh(appContext)
             } catch (t: Throwable) {
                 NookiSchedulerTelemetry.record(
                     source = "AlarmReceiver",
