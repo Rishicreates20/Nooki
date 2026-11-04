@@ -103,6 +103,9 @@ class ReminderRepositoryImpl(
 
     override suspend fun completeReminder(id: Long): ReminderEntity? {
         val existing = reminderDao.getReminderById(id) ?: return null
+        // Done can be tapped from the notification, the card and Nooki's chip; only the first
+        // tap may award XP and spawn the next recurring cycle.
+        if (existing.status == ReminderStatus.COMPLETED) return existing
         alarmScheduler.cancel(id)
         val now = System.currentTimeMillis()
         reminderDao.updateStatus(
