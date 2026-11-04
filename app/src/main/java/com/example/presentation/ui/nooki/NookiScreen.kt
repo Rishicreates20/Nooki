@@ -40,6 +40,7 @@ import com.example.presentation.mvi.NookiUiState
 import com.example.settings.NookiPrefs
 import com.example.ui.theme.NookiPalette
 import java.util.Calendar
+import com.example.ui.theme.quietButtonColors
 
 /** The ways Nooki can ask Android for something. The screen itself never touches the system. */
 data class ReadinessActions(
@@ -116,7 +117,7 @@ fun NookiScreen(
                         "your notifications. It reads them on this phone only, and saves only who, when and how much."
                 )
                 OutlinedButton(onClick = actions.openNoticeAccess) { Text("Turn on noticing") }
-                TextButton(onClick = actions.openAppInfo) { Text("Android says it's restricted?") }
+                TextButton(colors = quietButtonColors(), onClick = actions.openAppInfo) { Text("Android says it's restricted?") }
             }
 
             Heading("Daily rhythm")
@@ -147,7 +148,7 @@ fun NookiScreen(
 
             Heading("Your data")
             Note("Everything stays on this phone. Nooki doesn't have internet permission, so it can't send anything anywhere.")
-            TextButton(onClick = { onIntent(NookiIntent.ClearNoticedHistory) }) { Text("Delete everything Nooki noticed") }
+            TextButton(colors = quietButtonColors(), onClick = { onIntent(NookiIntent.ClearNoticedHistory) }) { Text("Delete everything Nooki noticed") }
 
             if (showDeveloper) {
                 Heading("Developer")
@@ -197,8 +198,8 @@ private fun BriefTimeDialog(initialMinutes: Int, onDismiss: () -> Unit, onSave: 
     AlertDialog(
         onDismissRequest = onDismiss,
         text = { TimePicker(state = time) },
-        confirmButton = { TextButton(onClick = { onSave(time.hour * 60 + time.minute) }) { Text("Save time") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(colors = quietButtonColors(), onClick = { onSave(time.hour * 60 + time.minute) }) { Text("Save time") } },
+        dismissButton = { TextButton(colors = quietButtonColors(), onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

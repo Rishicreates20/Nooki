@@ -42,7 +42,7 @@ adb shell input tap $((W / 2)) $TAB_Y
 sleep 3
 shot 03_remember
 adb shell input tap $((W * 5 / 6)) $TAB_Y
-sleep 8
+sleep 25
 shot 04_nooki
 adb shell input tap $((W / 6)) $TAB_Y
 sleep 2
@@ -108,7 +108,7 @@ else
 fi
 
 # Reboot for real, with a reminder waiting: it has to come back and ring.
-share "Reboot test in 3 minutes"
+share "Reboot test in 4 minutes"
 sleep 4
 adb shell input keyevent KEYCODE_ENTER
 sleep 3

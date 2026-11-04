@@ -78,6 +78,14 @@ object TimeWords {
         }
     }
 
+    /** "Since today", "Since yesterday", "For 12 days": how long something has been open. */
+    fun openFor(sinceMillis: Long, nowMillis: Long, zone: TimeZone = TimeZone.getDefault()): String =
+        when (val days = daysBetween(sinceMillis, nowMillis, zone)) {
+            0 -> "Since today"
+            1 -> "Since yesterday"
+            else -> "For $days days"
+        }
+
     /** "in 2 days", "tomorrow", "today", "2 days ago", for how far off something is. */
     fun dayGap(millis: Long, nowMillis: Long, zone: TimeZone = TimeZone.getDefault()): String {
         val days = daysBetween(nowMillis, millis, zone)

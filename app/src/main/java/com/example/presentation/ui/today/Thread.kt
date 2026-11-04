@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -155,22 +154,18 @@ fun KnotMark(color: Color, modifier: Modifier = Modifier, size: Dp = 26.dp) {
 private fun DrawScope.drawKnot(color: Color) {
     val c = center
     val w = size.width
-    rotate(degrees = -32f, pivot = c) {
-        // Two lobes of an overhand knot, with the wrap drawn across them.
-        drawOval(color, topLeft = Offset(c.x - w * 0.46f, c.y - w * 0.27f), size = Size(w * 0.56f, w * 0.54f))
-        drawOval(color, topLeft = Offset(c.x - w * 0.10f, c.y - w * 0.27f), size = Size(w * 0.56f, w * 0.54f))
-        val wrap = Stroke(width = w * 0.075f, cap = StrokeCap.Round)
-        val shine = Color.White.copy(alpha = 0.72f)
-        val first = Path().apply {
-            moveTo(c.x - w * 0.14f, c.y - w * 0.20f)
-            quadraticTo(c.x + w * 0.06f, c.y, c.x - w * 0.14f, c.y + w * 0.20f)
+    rotate(degrees = -28f, pivot = c) {
+        drawOval(color, topLeft = Offset(c.x - w * 0.44f, c.y - w * 0.31f), size = Size(w * 0.88f, w * 0.62f))
+        // The turns of thread around the knot.
+        val wrap = Stroke(width = w * 0.07f, cap = StrokeCap.Round)
+        val shine = Color.White.copy(alpha = 0.62f)
+        listOf(-0.15f, 0.12f).forEach { x ->
+            val turn = Path().apply {
+                moveTo(c.x + w * x, c.y - w * 0.23f)
+                quadraticTo(c.x + w * (x + 0.15f), c.y, c.x + w * x, c.y + w * 0.23f)
+            }
+            drawPath(turn, shine, style = wrap)
         }
-        val second = Path().apply {
-            moveTo(c.x + w * 0.10f, c.y - w * 0.20f)
-            quadraticTo(c.x + w * 0.30f, c.y, c.x + w * 0.10f, c.y + w * 0.20f)
-        }
-        drawPath(first, shine, style = wrap)
-        drawPath(second, shine, style = wrap)
     }
 }
 
@@ -185,8 +180,8 @@ private fun animationsEnabled(context: android.content.Context): Boolean =
 fun ThreadSwoop(
     color: Color,
     fromRightInset: Dp,
-    modifier: Modifier = Modifier,
-    height: Dp = 64.dp
+    startY: Dp,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -196,13 +191,16 @@ fun ThreadSwoop(
         if (reveal.value < 1f) reveal.animateTo(1f, tween(durationMillis = 820, easing = FastOutSlowInEasing))
         played = true
     }
-    Canvas(modifier.fillMaxWidth().height(height)) {
+    Canvas(modifier) {
         val startX = size.width - fromRightInset.toPx()
         val endX = RailCenter.toPx()
-        val h = size.height
+        val top = startY.toPx()
+        val drop = size.height - top
+        // Both control points sit directly above and below their ends, so the thread leaves the bell
+        // hanging straight down and reaches the rail the same way.
         val full = Path().apply {
-            moveTo(startX, 0f)
-            cubicTo(startX, h * 0.92f, endX + (startX - endX) * 0.34f, h * 0.10f, endX, h)
+            moveTo(startX, top)
+            cubicTo(startX, top + drop * 0.85f, endX, top + drop * 0.30f, endX, size.height)
         }
         val measure = PathMeasure()
         measure.setPath(full, false)

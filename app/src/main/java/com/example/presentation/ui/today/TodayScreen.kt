@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,7 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.attention.AttentionItem
@@ -49,8 +50,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val HeaderTop = 12.dp
 private val PetSize = 118.dp
 private val PetInsetEnd = 12.dp
+
+/** How far down Nooki's drawing her collar bell sits: 83 on her 108 unit grid. */
+private const val BellHeight = 83f / 108f
 
 /** From the screen edge to the middle of Nooki, where the thread leaves her collar. */
 private val ThreadStartInset = PetInsetEnd + PetSize / 2
@@ -172,41 +177,45 @@ private fun TodayHeader(
     threadColor: Color,
     onPetTap: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-        Box(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = PetSize + PetInsetEnd + 4.dp)
-            ) {
-                Text(
-                    text = SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH).format(Date(nowMillis)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NookiPalette.colors.muted
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = headline,
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.testTag("today_headline")
-                )
-                if (subline.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(subline, style = MaterialTheme.typography.bodyLarge, color = NookiPalette.colors.muted)
-                }
-            }
-            NookiFace(
-                mood = mood,
-                reaction = reaction,
-                onTap = onPetTap,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = PetInsetEnd)
-                    .size(PetSize)
+    Box(Modifier.fillMaxWidth().statusBarsPadding()) {
+        ThreadSwoop(
+            color = threadColor,
+            fromRightInset = ThreadStartInset,
+            startY = HeaderTop + PetSize * BellHeight,
+            modifier = Modifier.matchParentSize()
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 176.dp)
+                .padding(start = 20.dp, end = PetSize + PetInsetEnd + 4.dp, top = HeaderTop, bottom = 72.dp)
+        ) {
+            Text(
+                text = SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH).format(Date(nowMillis)),
+                style = MaterialTheme.typography.labelMedium,
+                color = NookiPalette.colors.muted
             )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.testTag("today_headline")
+            )
+            if (subline.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(subline, style = MaterialTheme.typography.bodyLarge, color = NookiPalette.colors.muted)
+            }
         }
-        ThreadSwoop(color = threadColor, fromRightInset = ThreadStartInset)
+        NookiFace(
+            mood = mood,
+            reaction = reaction,
+            onTap = onPetTap,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = PetInsetEnd, top = HeaderTop)
+                .size(PetSize)
+        )
     }
 }
 
@@ -405,14 +414,15 @@ private fun NoticedRow(
 
 @Composable
 internal fun QuietAction(label: String, color: Color, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = color),
-        modifier = Modifier.padding(end = 12.dp)
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, textDecoration = TextDecoration.None)
-    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        modifier = Modifier
+            .padding(end = 18.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 10.dp)
+    )
 }
 
 @Composable

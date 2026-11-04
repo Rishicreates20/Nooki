@@ -192,7 +192,7 @@ private fun LooseEndRow(end: LooseEndEntity, nowMillis: Long, onIntent: (NookiIn
         Column(Modifier.weight(1f)) {
             Text(BriefComposer.owedSentence(end), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Since ${TimeWords.ago(end.createdAtMillis, nowMillis)}",
+                TimeWords.openFor(end.createdAtMillis, nowMillis),
                 style = MaterialTheme.typography.bodySmall,
                 color = NookiPalette.colors.muted
             )

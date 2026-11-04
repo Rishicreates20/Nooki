@@ -163,8 +163,8 @@ private fun DrawScope.drawHead(mood: PetMood, u: Float, blink: Float) {
         mood == PetMood.OVERWHELMED -> {
             eye(44.5f, 56.5f, 2.8f)
             eye(63.5f, 56.5f, 2.8f)
-            val browL = Path().apply { moveTo(39.5f * u, 47.5f * u); lineTo(46.5f * u, 49.5f * u) }
-            val browR = Path().apply { moveTo(68.5f * u, 47.5f * u); lineTo(61.5f * u, 49.5f * u) }
+            val browL = Path().apply { moveTo(39.5f * u, 50f * u); lineTo(46.5f * u, 47f * u) }
+            val browR = Path().apply { moveTo(68.5f * u, 50f * u); lineTo(61.5f * u, 47f * u) }
             drawPath(browL, Ink, style = line)
             drawPath(browR, Ink, style = line)
         }

@@ -1,6 +1,8 @@
 package com.example.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
@@ -89,3 +91,8 @@ fun NookiTheme(
         )
     }
 }
+
+/** Text buttons take indigo: marigold fills well but is too pale to read as text on cotton. */
+@Composable
+fun quietButtonColors(): ButtonColors =
+    ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)

@@ -11,6 +11,7 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -289,15 +291,22 @@ fun NookiShell(
             }
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            val paper = MaterialTheme.colorScheme.background
+            Column(Modifier.fillMaxWidth()) {
                 if (state.tab != NookiTab.NOOKI) {
-                    CaptureBar(
-                        onOpen = { onIntent(NookiIntent.OpenCapture()) },
-                        onVoice = onVoice,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
+                    // The list fades out behind the bar, so nothing is cut off mid-line.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Brush.verticalGradient(listOf(paper.copy(alpha = 0f), paper)))
+                            .padding(top = 18.dp, bottom = 6.dp)
+                    ) {
+                        CaptureBar(onOpen = { onIntent(NookiIntent.OpenCapture()) }, onVoice = onVoice)
+                    }
                 }
-                BottomTabs(state, onIntent)
+                Column(Modifier.fillMaxWidth().background(paper).navigationBarsPadding()) {
+                    BottomTabs(state, onIntent)
+                }
             }
         }
     ) { inner ->

@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import java.util.Calendar
 import java.util.TimeZone
+import com.example.ui.theme.quietButtonColors
 
 /** Date first, then time. Android's picker reports the date at UTC midnight, so it is rebuilt locally. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,12 +40,11 @@ fun PickDateTimeDialog(
         DatePickerDialog(
             onDismissRequest = onDismiss,
             confirmButton = {
-                TextButton(
-                    onClick = { choosingTime = true },
+                TextButton(colors = quietButtonColors(), onClick = { choosingTime = true },
                     enabled = dateState.selectedDateMillis != null
                 ) { Text("Next") }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(colors = quietButtonColors(), onClick = onDismiss) { Text("Cancel") } }
         ) { DatePicker(state = dateState) }
     } else {
         AlertDialog(
@@ -52,7 +52,7 @@ fun PickDateTimeDialog(
             title = { Text("What time?") },
             text = { TimePicker(state = timeState) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(colors = quietButtonColors(), onClick = {
                     val date = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
                         timeInMillis = dateState.selectedDateMillis ?: initialMillis
                     }
@@ -63,7 +63,7 @@ fun PickDateTimeDialog(
                     onPicked(result.timeInMillis)
                 }) { Text("Save time") }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(colors = quietButtonColors(), onClick = onDismiss) { Text("Cancel") } }
         )
     }
 }

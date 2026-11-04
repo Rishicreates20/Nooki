@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.example.presentation.mvi.NookiIntent
 import com.example.presentation.mvi.NookiUiState
 import com.example.ui.theme.NookiPalette
+import com.example.ui.theme.quietButtonColors
 
 /** Alarm and receiver diagnostics. Only reachable in debug builds. */
 @Composable
@@ -39,7 +40,7 @@ fun SchedulerLabScreen(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onClose, contentPadding = PaddingValues(0.dp)) { Text("Back") }
+                TextButton(colors = quietButtonColors(), onClick = onClose, contentPadding = PaddingValues(0.dp)) { Text("Back") }
                 Text("Scheduler diagnostics", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "Exact alarms allowed: ${state.readiness.canScheduleExact}",

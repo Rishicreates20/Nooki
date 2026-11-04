@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -46,6 +47,7 @@ import com.example.presentation.ui.components.NookiFace
 import com.example.presentation.ui.nooki.ReadinessActions
 import com.example.settings.Persona
 import com.example.ui.theme.NookiPalette
+import com.example.ui.theme.quietButtonColors
 
 /** Five short steps. Nothing is asked for before the moment it clearly helps. */
 @Composable
@@ -157,7 +159,7 @@ fun OnboardingScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = NookiPalette.colors.muted
                         )
-                        TextButton(onClick = actions.openAppInfo) { Text("Open App info") }
+                        TextButton(colors = quietButtonColors(), onClick = actions.openAppInfo) { Text("Open App info") }
                     }
                 }
             }
@@ -189,7 +191,7 @@ private fun Step(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            NookiFace(mood = mood, modifier = Modifier.size(132.dp))
+            NookiFace(mood = mood, modifier = Modifier.offset(x = (-34).dp).size(132.dp))
             Spacer(Modifier.height(10.dp))
             Text(title, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.testTag("onboarding_title"))
             if (body != null) {
@@ -208,7 +210,7 @@ private fun Step(
                 .testTag("onboarding_primary")
         ) { Text(primary) }
         if (secondary != null) {
-            TextButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth()) { Text(secondary) }
+            TextButton(colors = quietButtonColors(), onClick = onSecondary, modifier = Modifier.fillMaxWidth()) { Text(secondary) }
         }
     }
 }

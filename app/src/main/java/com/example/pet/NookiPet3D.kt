@@ -130,7 +130,8 @@ fun NookiPet3D(
     val childNodes = remember(modelNode) { mutableStateListOf<Node>(modelNode) }
     DisposableEffect(modelNode) { onDispose { modelNode.destroy() } }
     val cameraNode = rememberCameraNode(engine) {
-        position = Position(x = 0f, y = 0.02f, z = 1.75f)
+        // The model stands on the origin and is about one unit tall, so look at its middle.
+        position = Position(x = 0f, y = 0.5f, z = 1.9f)
     }
 
     // Rest transform produced by scaleToUnits/centerOrigin; procedural motion is layered on top.

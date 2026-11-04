@@ -161,10 +161,18 @@ fun CaptureContent(
                 }
                 BasicTextField(
                     value = field,
-                    onValueChange = {
-                        field = it
-                        choiceIndex = -1
-                        pickedAt = null
+                    onValueChange = { value ->
+                        // A hardware keyboard sends Enter as a new line, and that should mean save.
+                        val pressedEnter = value.text.length == field.text.length + 1 &&
+                            value.text.replace("\n", "") == field.text.replace("\n", "") &&
+                            value.text.count { it == '\n' } > field.text.count { it == '\n' }
+                        if (pressedEnter) {
+                            submit()
+                        } else {
+                            field = value
+                            choiceIndex = -1
+                            pickedAt = null
+                        }
                     },
                     textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
