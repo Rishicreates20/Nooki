@@ -17,7 +17,10 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -124,6 +127,10 @@ import com.example.scheduler.NotificationHelper
 import com.example.scheduler.ScheduleResult
 import com.example.scheduler.SchedulerDiagnosticEntry
 import com.example.scheduler.receiver.ReminderAlarmReceiver
+import com.example.pet.NookiPet3D
+import com.example.pet.PetMood
+import com.example.pet.PetMoodResolver
+import com.example.ui.components.MoodBadge
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.NookiAmberLight
 import com.example.ui.theme.NookiCoralAccent
@@ -214,6 +221,8 @@ fun NookiMilestoneOneWorkbench(
     val overdueReminders = remember(allReminders, nowMillis) {
         allReminders.filter { it.isOverdue(nowMillis) && it.status != ReminderStatus.COMPLETED }
     }
+    // Derived state only: Room stays the single source of truth for Nooki's mood.
+    val petMood = remember(allReminders, nowMillis) { PetMoodResolver.resolve(allReminders, nowMillis) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -276,6 +285,7 @@ fun NookiMilestoneOneWorkbench(
         ) {
             if (selectedTab == 0) {
                 DeskPetReminderScreen(
+                    petMood = petMood,
                     allReminders = allReminders,
                     activeReminders = activeReminders,
                     ringingReminders = ringingReminders,
@@ -397,6 +407,7 @@ fun NookiMilestoneOneWorkbench(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DeskPetReminderScreen(
+    petMood: PetMood,
     allReminders: List<ReminderEntity>,
     activeReminders: List<ReminderEntity>,
     ringingReminders: List<ReminderEntity>,
@@ -430,6 +441,7 @@ private fun DeskPetReminderScreen(
         // Header & Nooki Desk Stage
         item {
             NookiDeskHeroCard(
+                mood = petMood,
                 ringingCount = ringingReminders.size,
                 overdueCount = overdueReminders.size,
                 activeCount = activeReminders.size,
@@ -669,6 +681,7 @@ private fun DeskPetReminderScreen(
 
 @Composable
 private fun NookiDeskHeroCard(
+    mood: PetMood,
     ringingCount: Int,
     overdueCount: Int,
     activeCount: Int,
@@ -686,36 +699,43 @@ private fun NookiDeskHeroCard(
         label = "nooki_bounce"
     )
 
-    val moodState = when {
-        ringingCount > 0 -> "ALERT! Nooki is ringing your desk bell!"
-        overdueCount > 0 -> "Worried — $overdueCount overdue task(s) waiting"
-        activeCount > 0 -> "Attentive — Watching $activeCount scheduled alarm(s)"
-        else -> "Cozy & Content — All desk tasks clear!"
+    val moodState = when (mood) {
+        PetMood.ALERT ->
+            if (ringingCount > 0) "Alert: Nooki is ringing your desk bell!" else mood.caption
+        PetMood.OVERWHELMED -> "Overwhelmed: $overdueCount overdue task(s) waiting"
+        PetMood.HAPPY -> if (activeCount > 0) "Happy: watching $activeCount alarm(s)" else mood.caption
+        PetMood.SLEEPING -> mood.caption
     }
 
+    // Contextual color: urgency shifts the aura, the 3D stage and the badge together.
     val auraColor by animateColorAsState(
-        targetValue = when {
-            ringingCount > 0 -> NookiCoralAccent
-            overdueCount > 0 -> NookiAmberLight
-            else -> NookiMintSuccess
+        targetValue = when (mood) {
+            PetMood.SLEEPING -> NookiSkyInfo
+            PetMood.HAPPY -> NookiMintSuccess
+            PetMood.ALERT -> NookiAmberLight
+            PetMood.OVERWHELMED -> NookiCoralAccent
         },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nooki_aura_color"
     )
+    val cardColor = MaterialTheme.colorScheme.surfaceVariant
+    val stageColor = lerp(MaterialTheme.colorScheme.surface, auraColor, 0.16f)
+    // Asymmetric, hand-tuned corners instead of a uniform template radius.
+    val heroShape = RoundedCornerShape(topStart = 36.dp, topEnd = 14.dp, bottomEnd = 36.dp, bottomStart = 22.dp)
 
     val level = (totalXp / 50) + 1
     val xpInLevel = totalXp % 50
 
     Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-        ),
+        shape = heroShape,
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .border(
                 width = 1.5.dp,
                 color = auraColor.copy(alpha = 0.55f),
-                shape = RoundedCornerShape(28.dp)
+                shape = heroShape
             )
     ) {
         Column(
@@ -729,7 +749,13 @@ private fun NookiDeskHeroCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                MoodBadge(
+                    mood = mood,
+                    color = auraColor,
+                    contentColor = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Nooki • Lv.$level Desk Spirit",
                         style = MaterialTheme.typography.titleLarge,
@@ -756,123 +782,133 @@ private fun NookiDeskHeroCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Expressive Custom Canvas Desk-Pet Companion
-            Box(
+            // Real-time 3D desk pet (SceneView/Filament). The original 2D Canvas pet stays as a
+            // fallback for Compose previews and devices where the model can't load.
+            NookiPet3D(
+                mood = mood,
+                stageColor = stageColor,
+                surroundColor = cardColor,
+                cornerRadius = 26.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(145.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val centerX = size.width / 2f
-                    val centerY = size.height / 2f + bounceOffset
+                    .height(230.dp)
+                    .testTag("nooki_pet_3d"),
+                fallback = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val centerX = size.width / 2f
+                            val centerY = size.height / 2f + bounceOffset
 
-                    // Desk wooden mat surface
-                    drawRoundRect(
-                        color = Color(0xFF3E2723),
-                        topLeft = Offset(centerX - 135.dp.toPx(), size.height - 24.dp.toPx()),
-                        size = Size(270.dp.toPx(), 16.dp.toPx()),
-                        cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx())
-                    )
+                            // Desk wooden mat surface
+                            drawRoundRect(
+                                color = Color(0xFF3E2723),
+                                topLeft = Offset(centerX - 135.dp.toPx(), size.height - 24.dp.toPx()),
+                                size = Size(270.dp.toPx(), 16.dp.toPx()),
+                                cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx())
+                            )
 
-                    // Soft radial glow behind Nooki
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(auraColor.copy(alpha = 0.32f), Color.Transparent),
-                            center = Offset(centerX, centerY),
-                            radius = 75.dp.toPx()
-                        ),
-                        radius = 75.dp.toPx(),
-                        center = Offset(centerX, centerY)
-                    )
+                            // Soft radial glow behind Nooki
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(auraColor.copy(alpha = 0.32f), Color.Transparent),
+                                    center = Offset(centerX, centerY),
+                                    radius = 75.dp.toPx()
+                                ),
+                                radius = 75.dp.toPx(),
+                                center = Offset(centerX, centerY)
+                            )
 
-                    // Ears
-                    val leftEar = Path().apply {
-                        moveTo(centerX - 38.dp.toPx(), centerY - 18.dp.toPx())
-                        lineTo(centerX - 50.dp.toPx(), centerY - 52.dp.toPx())
-                        lineTo(centerX - 16.dp.toPx(), centerY - 36.dp.toPx())
-                        close()
+                            // Ears
+                            val leftEar = Path().apply {
+                                moveTo(centerX - 38.dp.toPx(), centerY - 18.dp.toPx())
+                                lineTo(centerX - 50.dp.toPx(), centerY - 52.dp.toPx())
+                                lineTo(centerX - 16.dp.toPx(), centerY - 36.dp.toPx())
+                                close()
+                            }
+                            val rightEar = Path().apply {
+                                moveTo(centerX + 38.dp.toPx(), centerY - 18.dp.toPx())
+                                lineTo(centerX + 50.dp.toPx(), centerY - 52.dp.toPx())
+                                lineTo(centerX + 16.dp.toPx(), centerY - 36.dp.toPx())
+                                close()
+                            }
+                            drawPath(leftEar, color = Color(0xFFF59E0B))
+                            drawPath(rightEar, color = Color(0xFFF59E0B))
+
+                            // Nooki chubby body
+                            drawOval(
+                                color = Color(0xFFFBBF24),
+                                topLeft = Offset(centerX - 50.dp.toPx(), centerY - 38.dp.toPx()),
+                                size = Size(100.dp.toPx(), 84.dp.toPx())
+                            )
+
+                            // Cream belly/cheek patch
+                            drawOval(
+                                color = Color(0xFFFFFBEB),
+                                topLeft = Offset(centerX - 38.dp.toPx(), centerY - 10.dp.toPx()),
+                                size = Size(76.dp.toPx(), 52.dp.toPx())
+                            )
+
+                            // Eyes (wide alert if ringing, cozy arcs or dots otherwise)
+                            val eyeY = centerY - 6.dp.toPx()
+                            val leftEyeX = centerX - 18.dp.toPx()
+                            val rightEyeX = centerX + 18.dp.toPx()
+                            val eyeRadius = if (ringingCount > 0) 6.5.dp.toPx() else 5.dp.toPx()
+
+                            drawCircle(
+                                color = Color(0xFF1E1B4B),
+                                radius = eyeRadius,
+                                center = Offset(leftEyeX, eyeY)
+                            )
+                            drawCircle(
+                                color = Color(0xFF1E1B4B),
+                                radius = eyeRadius,
+                                center = Offset(rightEyeX, eyeY)
+                            )
+                            // Eye shine
+                            drawCircle(
+                                color = Color.White,
+                                radius = 2.dp.toPx(),
+                                center = Offset(leftEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 2.dp.toPx(),
+                                center = Offset(rightEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
+                            )
+
+                            // Rosy cheeks
+                            drawCircle(
+                                color = NookiCoralAccent.copy(alpha = 0.65f),
+                                radius = 6.dp.toPx(),
+                                center = Offset(leftEyeX - 10.dp.toPx(), eyeY + 9.dp.toPx())
+                            )
+                            drawCircle(
+                                color = NookiCoralAccent.copy(alpha = 0.65f),
+                                radius = 6.dp.toPx(),
+                                center = Offset(rightEyeX + 10.dp.toPx(), eyeY + 9.dp.toPx())
+                            )
+
+                            // Nose & Mouth
+                            drawCircle(
+                                color = Color(0xFFEA580C),
+                                radius = 3.5.dp.toPx(),
+                                center = Offset(centerX, eyeY + 8.dp.toPx())
+                            )
+                            drawArc(
+                                color = Color(0xFF1E1B4B),
+                                startAngle = 15f,
+                                sweepAngle = 150f,
+                                useCenter = false,
+                                topLeft = Offset(centerX - 8.dp.toPx(), eyeY + 10.dp.toPx()),
+                                size = Size(16.dp.toPx(), 10.dp.toPx()),
+                                style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                        }
                     }
-                    val rightEar = Path().apply {
-                        moveTo(centerX + 38.dp.toPx(), centerY - 18.dp.toPx())
-                        lineTo(centerX + 50.dp.toPx(), centerY - 52.dp.toPx())
-                        lineTo(centerX + 16.dp.toPx(), centerY - 36.dp.toPx())
-                        close()
-                    }
-                    drawPath(leftEar, color = Color(0xFFF59E0B))
-                    drawPath(rightEar, color = Color(0xFFF59E0B))
-
-                    // Nooki chubby body
-                    drawOval(
-                        color = Color(0xFFFBBF24),
-                        topLeft = Offset(centerX - 50.dp.toPx(), centerY - 38.dp.toPx()),
-                        size = Size(100.dp.toPx(), 84.dp.toPx())
-                    )
-
-                    // Cream belly/cheek patch
-                    drawOval(
-                        color = Color(0xFFFFFBEB),
-                        topLeft = Offset(centerX - 38.dp.toPx(), centerY - 10.dp.toPx()),
-                        size = Size(76.dp.toPx(), 52.dp.toPx())
-                    )
-
-                    // Eyes (wide alert if ringing, cozy arcs or dots otherwise)
-                    val eyeY = centerY - 6.dp.toPx()
-                    val leftEyeX = centerX - 18.dp.toPx()
-                    val rightEyeX = centerX + 18.dp.toPx()
-                    val eyeRadius = if (ringingCount > 0) 6.5.dp.toPx() else 5.dp.toPx()
-
-                    drawCircle(
-                        color = Color(0xFF1E1B4B),
-                        radius = eyeRadius,
-                        center = Offset(leftEyeX, eyeY)
-                    )
-                    drawCircle(
-                        color = Color(0xFF1E1B4B),
-                        radius = eyeRadius,
-                        center = Offset(rightEyeX, eyeY)
-                    )
-                    // Eye shine
-                    drawCircle(
-                        color = Color.White,
-                        radius = 2.dp.toPx(),
-                        center = Offset(leftEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 2.dp.toPx(),
-                        center = Offset(rightEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
-                    )
-
-                    // Rosy cheeks
-                    drawCircle(
-                        color = NookiCoralAccent.copy(alpha = 0.65f),
-                        radius = 6.dp.toPx(),
-                        center = Offset(leftEyeX - 10.dp.toPx(), eyeY + 9.dp.toPx())
-                    )
-                    drawCircle(
-                        color = NookiCoralAccent.copy(alpha = 0.65f),
-                        radius = 6.dp.toPx(),
-                        center = Offset(rightEyeX + 10.dp.toPx(), eyeY + 9.dp.toPx())
-                    )
-
-                    // Nose & Mouth
-                    drawCircle(
-                        color = Color(0xFFEA580C),
-                        radius = 3.5.dp.toPx(),
-                        center = Offset(centerX, eyeY + 8.dp.toPx())
-                    )
-                    drawArc(
-                        color = Color(0xFF1E1B4B),
-                        startAngle = 15f,
-                        sweepAngle = 150f,
-                        useCenter = false,
-                        topLeft = Offset(centerX - 8.dp.toPx(), eyeY + 10.dp.toPx()),
-                        size = Size(16.dp.toPx(), 10.dp.toPx()),
-                        style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-                    )
                 }
-            }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Summary Stat Pills
             Row(

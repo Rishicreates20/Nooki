@@ -19,3 +19,19 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ---- Nooki 3D pet (SceneView / Filament / gltfio) --------------------------------------------
+# Filament's Java classes are called from native code via JNI; R8 must not rename or strip them.
+-keep class com.google.android.filament.** { *; }
+-keepclassmembers class com.google.android.filament.** { native <methods>; }
+-dontwarn com.google.android.filament.**
+-keep class io.github.sceneview.** { *; }
+-dontwarn io.github.sceneview.**
+# SceneView pulls in Fuel (HTTP model loading) even though Nooki only loads bundled assets.
+-dontwarn fuel.**
+-dontwarn io.ktor.**
+-dontwarn okhttp3.**
+-dontwarn org.slf4j.**
+
+# Keep readable stack traces in crash reports from sideloaded release builds.
+-keepattributes SourceFile,LineNumberTable

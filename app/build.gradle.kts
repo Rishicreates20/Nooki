@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -22,18 +23,46 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
-  // Do not remove or modify these signingConfigs. They are necessary for building, installing,
-  // and updating Android apps in AI Studio.
+  // ---------------------------------------------------------------------------------------------
+  // Signing
+  //
+  // Release: credentials are read, in order, from
+  //   1. environment variables KEYSTORE_PATH / STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+  //      (this is what AI Studio injects, so its builds keep working unchanged), then
+  //   2. a git-ignored `keystore.properties` file in the project root (see
+  //      keystore.properties.example), used for local sideload builds.
+  // If neither provides a readable keystore, `assembleRelease` falls back to the debug key so you
+  // still get an installable APK, and prints a warning. Never ship a debug-signed APK to a store.
+  //
+  // Debug: uses `debug.keystore` in the project root when present (AI Studio provides one),
+  // otherwise Android Studio's standard ~/.android/debug.keystore, so a fresh clone builds.
+  // ---------------------------------------------------------------------------------------------
+  val keystoreProps =
+    Properties().apply {
+      val f = rootProject.file("keystore.properties")
+      if (f.isFile) f.inputStream().use { load(it) }
+    }
+  fun signingValue(env: String, prop: String): String? =
+    System.getenv(env)?.takeIf { it.isNotBlank() } ?: keystoreProps.getProperty(prop)?.takeIf { it.isNotBlank() }
+
+  val releaseStorePath = signingValue("KEYSTORE_PATH", "storeFile") ?: "${rootDir}/my-upload-key.jks"
+  val releaseStoreFile = rootProject.file(releaseStorePath)
+  val releaseStorePassword = signingValue("STORE_PASSWORD", "storePassword")
+  val releaseKeyPassword = signingValue("KEY_PASSWORD", "keyPassword")
+  val hasReleaseKey = releaseStoreFile.isFile && releaseStorePassword != null && releaseKeyPassword != null
+
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      storeFile = releaseStoreFile
+      storePassword = releaseStorePassword
+      keyAlias = signingValue("KEY_ALIAS", "keyAlias") ?: "upload"
+      keyPassword = releaseKeyPassword
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      val projectDebugKeystore = rootProject.file("debug.keystore")
+      storeFile =
+        if (projectDebugKeystore.isFile) projectDebugKeystore
+        else File(System.getProperty("user.home"), ".android/debug.keystore")
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -43,18 +72,52 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      // R8 shrinking + resource shrinking for a small, optimized sideload APK. Filament/SceneView
+      // keep rules live in proguard-rules.pro.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
-      signingConfig = signingConfigs.getByName("release")
+      signingConfig =
+        if (hasReleaseKey) {
+          signingConfigs.getByName("release")
+        } else {
+          logger.warn(
+            "Nooki: no release keystore found (env vars or keystore.properties). " +
+              "Release APK will be signed with the DEBUG key - fine for sideloading, not for Play."
+          )
+          signingConfigs.getByName("debugConfig")
+        }
     }
     debug {
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
       signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Native ABIs. Filament (the 3D renderer behind SceneView) ships .so files for 4 ABIs, which is
+  // most of the APK size. By default you get ONE universal APK (simplest to sideload).
+  // Build per-ABI APKs with:  ./gradlew assembleRelease -PsplitAbi
+  // and install the arm64-v8a one on any modern phone.
+  // ---------------------------------------------------------------------------------------------
+  splits {
+    abi {
+      isEnable = project.hasProperty("splitAbi")
+      reset()
+      include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+      isUniversalApk = true
+    }
+  }
+
+  // Keep 3D assets uncompressed so Filament can read them straight out of the APK.
+  androidResources { noCompress += listOf("glb", "gltf", "ktx", "filamat") }
+
+  lint {
+    checkReleaseBuilds = true
+    // Report problems (app/build/reports/lint-results-debug.html) without blocking the APK build.
+    abortOnError = false
+    checkDependencies = false
+  }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
@@ -105,6 +168,9 @@ dependencies {
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  // 3D desk-pet rendering (Filament + glTF) and Material shape morphing
+  implementation(libs.sceneview)
+  implementation(libs.androidx.graphics.shapes)
   // implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
