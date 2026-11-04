@@ -4,14 +4,18 @@ import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.domain.model.NookiPetMood
+import com.example.domain.model.NookiPetState
 import com.example.scheduler.SchedulerDiagnosticEntry
 
 /**
- * Single source-of-truth UI state for Nooki's MVI presentation layer.
+ * Immutable UI State emitted by [com.example.presentation.viewmodel.DeskPetViewModel]'s
+ * [kotlinx.coroutines.flow.StateFlow], derived reactively from Room database flows.
  */
 data class DeskUiState(
+    val petState: NookiPetState = NookiPetState.IdleCozy(),
     val petMood: NookiPetMood = NookiPetMood.IDLE_COZY,
     val speechBubbleText: String = NookiPetMood.IDLE_COZY.defaultSpeech,
+    val stateTransitionSummary: String = "STATE_IDLE_COZY • Listening to Room Flow",
     val level: Int = 1,
     val totalXp: Int = 0,
     val xpInCurrentLevel: Int = 0,
@@ -31,7 +35,7 @@ data class DeskUiState(
 )
 
 /**
- * User & system intents processed by [com.example.presentation.viewmodel.DeskPetViewModel].
+ * User and system intents dispatched to the reactive MVI state machine.
  */
 sealed interface DeskIntent {
     data object PetNookiHead : DeskIntent
@@ -54,7 +58,7 @@ sealed interface DeskIntent {
 }
 
 /**
- * One-shot side effects emitted by the ViewModel.
+ * One-shot UI side effects (Snackbars, Haptics) emitted via a buffered Channel.
  */
 sealed interface DeskSideEffect {
     data class ShowMessage(val message: String) : DeskSideEffect

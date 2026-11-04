@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAlert
 import androidx.compose.material.icons.filled.AlarmOn
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FormatListBulleted
@@ -100,7 +101,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.local.database.NookiDatabase
+import com.example.data.local.database.AppDatabase
 import com.example.data.local.entity.ReminderCategory
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
@@ -131,7 +132,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         NotificationHelper.ensureChannelCreated(this)
 
-        val database = NookiDatabase.getInstance(applicationContext)
+        val database = AppDatabase.getInstance(applicationContext)
         val alarmScheduler = AndroidExactAlarmScheduler(applicationContext)
         val repository = ReminderRepositoryImpl(database.reminderDao(), alarmScheduler)
 
@@ -157,6 +158,8 @@ fun NookiMainApp(
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Lifecycle-aware collection of the reactive StateFlow<DeskUiState>
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -225,12 +228,12 @@ fun NookiMainApp(
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Storage,
-                            contentDescription = "Milestone 1 & 2 Diagnostics Lab"
+                            contentDescription = "State Machine & Scheduler Lab"
                         )
                     },
                     label = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Scheduler Lab")
+                            Text("State & DB Lab")
                             if (uiState.telemetryLogs.isNotEmpty()) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Badge { Text("${uiState.telemetryLogs.size}") }
@@ -282,9 +285,7 @@ fun NookiMainApp(
                 )
             } else {
                 MilestoneOneInspectorLab(
-                    allReminders = uiState.allReminders,
-                    telemetryLogs = uiState.telemetryLogs,
-                    canScheduleExact = uiState.canScheduleExactAlarms,
+                    uiState = uiState,
                     onSimulateBootRecovery = { viewModel.onIntent(DeskIntent.SimulateBootRecovery) },
                     onSchedule5SecondTestAlarm = { viewModel.onIntent(DeskIntent.Schedule5SecondTestAlarm) },
                     onClearCompleted = { viewModel.onIntent(DeskIntent.ClearCompleted) }
@@ -294,11 +295,6 @@ fun NookiMainApp(
     }
 }
 
-/**
- * Full-screen layout where the 3D Nooki model is anchored squarely at [Alignment.Center],
- * flanked by a compact top status HUD and a bottom action bar that opens modal sheets for
- * creating reminders or managing the queue.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Centered3DDeskPetStage(
@@ -316,7 +312,7 @@ private fun Centered3DDeskPetStage(
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        // 1. TOP HUD: Level, XP Progress Bar, and Quick Stats (Anchored TopCenter)
+        // 1. TOP HUD: Level, XP Progress Bar, and Reactive StateFlow Pill (Anchored TopCenter)
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -326,7 +322,7 @@ private fun Centered3DDeskPetStage(
         ) {
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
                 tonalElevation = 4.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -375,6 +371,27 @@ private fun Centered3DDeskPetStage(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // Live StateFlow -> Room DB Synchronization Indicator
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.testTag("state_machine_status_strip")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = uiState.petMood.primaryAuraColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = uiState.stateTransitionSummary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -387,7 +404,7 @@ private fun Centered3DDeskPetStage(
                 )
             }
 
-            // Ringing alert overlay if an alarm is currently ringing
+            // Ringing alert overlay if an alarm is currently ringing in Room
             uiState.ringingReminders.firstOrNull()?.let { ringing ->
                 RingingAlertCard(
                     reminder = ringing,
@@ -422,7 +439,6 @@ private fun Centered3DDeskPetStage(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Next Scheduled Reminder Pill
             val nextReminder = uiState.activeReminders.firstOrNull()
             if (nextReminder != null) {
                 NextReminderDockCard(
@@ -437,7 +453,6 @@ private fun Centered3DDeskPetStage(
                 )
             }
 
-            // Primary Action Buttons Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -471,7 +486,6 @@ private fun Centered3DDeskPetStage(
         }
     }
 
-    // Modal Bottom Sheet: New Reminder Composer
     if (uiState.isComposerSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { onIntent(DeskIntent.SetComposerSheetOpen(false)) },
@@ -498,7 +512,6 @@ private fun Centered3DDeskPetStage(
         }
     }
 
-    // Modal Bottom Sheet: Active & Completed Reminder Queue
     if (uiState.isQueueSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { onIntent(DeskIntent.SetQueueSheetOpen(false)) },
@@ -1094,9 +1107,7 @@ private fun CompletedReminderRow(
 
 @Composable
 private fun MilestoneOneInspectorLab(
-    allReminders: List<ReminderEntity>,
-    telemetryLogs: List<SchedulerDiagnosticEntry>,
-    canScheduleExact: Boolean,
+    uiState: DeskUiState,
     onSimulateBootRecovery: () -> Unit,
     onSchedule5SecondTestAlarm: () -> Unit,
     onClearCompleted: () -> Unit
@@ -1128,12 +1139,17 @@ private fun MilestoneOneInspectorLab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Data & Scheduler Diagnostics Lab",
+                            text = "Reactive StateFlow & Room DB Lab",
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
                     Text(
-                        text = "Verify Room DB persistence, AlarmManager exact scheduling, ReminderAlarmReceiver (goAsync), and BootCompletedReceiver reconciliation.",
+                        text = "Current StateFlow Node: ${uiState.stateTransitionSummary}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = uiState.petMood.primaryAuraColor
+                    )
+                    Text(
+                        text = "Every Room table emission (insert, RINGING broadcast, snooze, completion, or boot recovery) feeds into NookiStateMachine.reduce() and emits a new DeskUiState.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1170,9 +1186,9 @@ private fun MilestoneOneInspectorLab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "canScheduleExactAlarms(): $canScheduleExact • Total DB Rows: ${allReminders.size}",
+                            text = "Exact Alarms: ${uiState.canScheduleExactAlarms} • Room Rows: ${uiState.allReminders.size}",
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (canScheduleExact) NookiMintSuccess else NookiAmberLight
+                            color = if (uiState.canScheduleExactAlarms) NookiMintSuccess else NookiAmberLight
                         )
                         OutlinedButton(onClick = onClearCompleted) {
                             Text("Prune Completed")
@@ -1184,12 +1200,12 @@ private fun MilestoneOneInspectorLab(
 
         item {
             Text(
-                text = "Live Scheduler & BroadcastReceiver Telemetry (${telemetryLogs.size})",
+                text = "StateFlow Transitions & Scheduler Telemetry (${uiState.telemetryLogs.size})",
                 style = MaterialTheme.typography.titleMedium
             )
         }
 
-        if (telemetryLogs.isEmpty()) {
+        if (uiState.telemetryLogs.isEmpty()) {
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -1203,14 +1219,14 @@ private fun MilestoneOneInspectorLab(
                         Icon(Icons.Outlined.Info, contentDescription = null, tint = NookiSkyInfo)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Tap '+5s Exact Alarm' or 'Boot Recovery' above to stream live AlarmManager & BroadcastReceiver logs.",
+                            text = "Tap '+5s Exact Alarm' or 'Boot Recovery' above to watch live StateFlow transitions and AlarmManager logs.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             }
         } else {
-            items(telemetryLogs, key = { it.id }) { entry ->
+            items(uiState.telemetryLogs, key = { it.id }) { entry ->
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surface,

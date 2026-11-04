@@ -9,6 +9,7 @@ import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
 import com.example.data.repository.ReminderRepository
 import com.example.domain.model.NookiPetMood
+import com.example.domain.model.NookiStateMachine
 import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskSideEffect
 import com.example.presentation.mvi.DeskUiState
@@ -22,23 +23,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Reactive MVI ViewModel driving the centered 3D Nooki model and Room/AlarmManager state.
+ * Reactive MVI ViewModel powered by Kotlin [StateFlow].
+ * Combines Room database flows (`allReminders`, `activeReminders`, `completedCount`, `totalEarnedXp`)
+ * with real-time clock ticks and interaction state through [NookiStateMachine.reduce] so that any
+ * Room table mutation immediately updates the UI and centered 3D Nooki model.
  */
 class DeskPetViewModel(
     private val repository: ReminderRepository,
     private val alarmScheduler: ExactAlarmScheduler
 ) : ViewModel() {
 
-    private data class InternalViewState(
+    private data class EphemeralInteractionState(
         val nowMillis: Long = System.currentTimeMillis(),
-        val isCelebratingUntilMillis: Long = 0L,
-        val customSpeechOverride: String? = null,
+        val celebratingUntilMillis: Long = 0L,
+        val celebrationSpeech: String? = null,
+        val lastEarnedXp: Int = 0,
         val petInteractionCombo: Int = 0,
         val bonusPetXp: Int = 0,
         val isAutoRotate3DEnabled: Boolean = true,
@@ -46,18 +53,24 @@ class DeskPetViewModel(
         val isQueueSheetOpen: Boolean = false
     )
 
-    private val internalState = MutableStateFlow(InternalViewState())
+    private val ephemeralState = MutableStateFlow(EphemeralInteractionState())
 
     private val _sideEffects = Channel<DeskSideEffect>(Channel.BUFFERED)
     val sideEffects: Flow<DeskSideEffect> = _sideEffects.receiveAsFlow()
 
+    private var lastLoggedMood: NookiPetMood? = null
+
+    /**
+     * Reactive [StateFlow] combining Room DAO flows with ephemeral UI state.
+     * Uses `SharingStarted.WhileSubscribed(5_000L)` for lifecycle-aware collection in Compose.
+     */
     val uiState: StateFlow<DeskUiState> = combine(
-        repository.allReminders,
-        repository.activeReminders,
-        repository.completedCount,
-        repository.totalEarnedXp,
+        repository.allReminders.distinctUntilChanged(),
+        repository.activeReminders.distinctUntilChanged(),
+        repository.completedCount.distinctUntilChanged(),
+        repository.totalEarnedXp.distinctUntilChanged(),
         NookiSchedulerTelemetry.logs,
-        internalState
+        ephemeralState
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val allReminders = values[0] as List<ReminderEntity>
@@ -67,47 +80,36 @@ class DeskPetViewModel(
         val dbXp = values[3] as Int
         @Suppress("UNCHECKED_CAST")
         val logs = values[4] as List<com.example.scheduler.SchedulerDiagnosticEntry>
-        val local = values[5] as InternalViewState
+        val local = values[5] as EphemeralInteractionState
 
         val now = local.nowMillis
         val ringing = allReminders.filter { it.status == ReminderStatus.RINGING }
         val overdue = allReminders.filter {
-            it.isOverdue(now) && it.status != ReminderStatus.COMPLETED && it.status != ReminderStatus.CANCELLED
+            it.isOverdue(now) &&
+                it.status != ReminderStatus.COMPLETED &&
+                it.status != ReminderStatus.CANCELLED
         }
 
-        val derivedMood = when {
-            ringing.isNotEmpty() -> NookiPetMood.EXCITED_RINGING
-            now < local.isCelebratingUntilMillis -> NookiPetMood.CELEBRATING_XP
-            overdue.isNotEmpty() -> NookiPetMood.WORRIED_OVERDUE
-            activeReminders.isNotEmpty() -> NookiPetMood.ATTENTIVE
-            completedCount > 0 && activeReminders.isEmpty() -> NookiPetMood.SLEEPING
-            else -> NookiPetMood.IDLE_COZY
-        }
-
-        val nextReminder = activeReminders.firstOrNull()
-        val dynamicSpeech = when {
-            ringing.isNotEmpty() -> "🔔 '${ringing.first().title}' is ringing! Tap Complete below!"
-            local.customSpeechOverride != null && now < local.isCelebratingUntilMillis -> local.customSpeechOverride
-            overdue.isNotEmpty() -> "🐾 '${overdue.first().title}' is overdue! Let's wrap it up!"
-            nextReminder != null -> {
-                val minsLeft = ((nextReminder.triggerAtMillis - now) / 60_000L).coerceAtLeast(0L)
-                val secsLeft = ((nextReminder.triggerAtMillis - now) / 1_000L).coerceAtLeast(0L)
-                if (minsLeft == 0L) {
-                    "Next up in ${secsLeft}s: '${nextReminder.title}'!"
-                } else {
-                    "Next reminder in ${minsLeft}m: '${nextReminder.title}'"
-                }
-            }
-            else -> derivedMood.defaultSpeech
-        }
+        // Run the pure deterministic State Machine Reducer on the latest Room DB emission
+        val resolvedPetState = NookiStateMachine.reduce(
+            allReminders = allReminders,
+            activeReminders = activeReminders,
+            completedCount = completedCount,
+            nowMillis = now,
+            celebratingUntilMillis = local.celebratingUntilMillis,
+            celebrationSpeech = local.celebrationSpeech,
+            lastEarnedXp = local.lastEarnedXp
+        )
 
         val combinedXp = dbXp + local.bonusPetXp
         val level = (combinedXp / 50) + 1
         val xpInLevel = combinedXp % 50
 
         DeskUiState(
-            petMood = derivedMood,
-            speechBubbleText = dynamicSpeech,
+            petState = resolvedPetState,
+            petMood = resolvedPetState.mood,
+            speechBubbleText = resolvedPetState.speechText,
+            stateTransitionSummary = "${resolvedPetState.mood.stateCode} • ${resolvedPetState.dbTriggerSummary}",
             level = level,
             totalXp = combinedXp,
             xpInCurrentLevel = xpInLevel,
@@ -125,11 +127,23 @@ class DeskPetViewModel(
             isComposerSheetOpen = local.isComposerSheetOpen,
             isQueueSheetOpen = local.isQueueSheetOpen
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = DeskUiState()
-    )
+    }
+        .onEach { state ->
+            // Record state machine mood transitions driven by Room updates into telemetry
+            if (lastLoggedMood != state.petMood) {
+                val previous = lastLoggedMood?.stateCode ?: "INIT"
+                lastLoggedMood = state.petMood
+                NookiSchedulerTelemetry.record(
+                    source = "StateFlowMachine",
+                    message = "Transition: $previous ➔ ${state.petMood.stateCode} (${state.petState.dbTriggerSummary})"
+                )
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = DeskUiState()
+        )
 
     init {
         viewModelScope.launch {
@@ -138,7 +152,7 @@ class DeskPetViewModel(
         viewModelScope.launch {
             while (true) {
                 delay(1_000L)
-                internalState.update { it.copy(nowMillis = System.currentTimeMillis()) }
+                ephemeralState.update { it.copy(nowMillis = System.currentTimeMillis()) }
             }
         }
     }
@@ -153,12 +167,13 @@ class DeskPetViewModel(
                     "Nooki loves keeping your desk on schedule! +2 XP!",
                     "Boop! Ready for your next deep-focus sprint!"
                 )
-                internalState.update { state ->
+                ephemeralState.update { state ->
                     val nextCombo = state.petInteractionCombo + 1
                     state.copy(
                         nowMillis = now,
-                        isCelebratingUntilMillis = now + 3_200L,
-                        customSpeechOverride = reactions[nextCombo % reactions.size],
+                        celebratingUntilMillis = now + 3_200L,
+                        celebrationSpeech = reactions[nextCombo % reactions.size],
+                        lastEarnedXp = 2,
                         petInteractionCombo = nextCombo,
                         bonusPetXp = state.bonusPetXp + 2
                     )
@@ -169,15 +184,15 @@ class DeskPetViewModel(
             }
 
             DeskIntent.ToggleAutoRotate3D -> {
-                internalState.update { it.copy(isAutoRotate3DEnabled = !it.isAutoRotate3DEnabled) }
+                ephemeralState.update { it.copy(isAutoRotate3DEnabled = !it.isAutoRotate3DEnabled) }
             }
 
             is DeskIntent.SetComposerSheetOpen -> {
-                internalState.update { it.copy(isComposerSheetOpen = intent.open) }
+                ephemeralState.update { it.copy(isComposerSheetOpen = intent.open) }
             }
 
             is DeskIntent.SetQueueSheetOpen -> {
-                internalState.update { it.copy(isQueueSheetOpen = intent.open) }
+                ephemeralState.update { it.copy(isQueueSheetOpen = intent.open) }
             }
 
             is DeskIntent.ScheduleReminder -> {
@@ -192,11 +207,12 @@ class DeskPetViewModel(
                         category = intent.category
                     )
                     val now = System.currentTimeMillis()
-                    internalState.update {
+                    ephemeralState.update {
                         it.copy(
                             isComposerSheetOpen = false,
-                            isCelebratingUntilMillis = now + 2_800L,
-                            customSpeechOverride = "Got it! I'll ring my 3D bell for '${entity.title}'!"
+                            celebratingUntilMillis = now + 2_800L,
+                            celebrationSpeech = "Saved to Room! I'll ring my 3D bell for '${entity.title}'!",
+                            lastEarnedXp = 0
                         )
                     }
                     val message = when (result) {
@@ -215,10 +231,11 @@ class DeskPetViewModel(
                 viewModelScope.launch {
                     repository.completeReminder(intent.reminder.id)
                     val now = System.currentTimeMillis()
-                    internalState.update {
+                    ephemeralState.update {
                         it.copy(
-                            isCelebratingUntilMillis = now + 3_500L,
-                            customSpeechOverride = "Awesome job completing '${intent.reminder.title}'! +${intent.reminder.petMoodImpact} XP!"
+                            celebratingUntilMillis = now + 3_500L,
+                            celebrationSpeech = "Awesome job completing '${intent.reminder.title}'! +${intent.reminder.petMoodImpact} XP!",
+                            lastEarnedXp = intent.reminder.petMoodImpact
                         )
                     }
                     _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
@@ -248,16 +265,17 @@ class DeskPetViewModel(
                     val triggerAt = System.currentTimeMillis() + 5_000L
                     val (entity, _) = repository.createAndScheduleReminder(
                         title = "5s 3D Bell Test Alarm",
-                        notes = "Watch the centered 3D Nooki model ring the alarm bell in 5 seconds!",
+                        notes = "Watch Room emit RINGING and transition the centered 3D Nooki model in 5 seconds!",
                         rawInput = "Test alarm in 5 seconds",
                         triggerAtMillis = triggerAt,
                         priority = ReminderPriority.URGENT,
                         category = ReminderCategory.DESK
                     )
-                    internalState.update {
+                    ephemeralState.update {
                         it.copy(
-                            isCelebratingUntilMillis = System.currentTimeMillis() + 2_500L,
-                            customSpeechOverride = "Countdown started! Watch my 3D bell in 5 seconds!"
+                            celebratingUntilMillis = System.currentTimeMillis() + 2_500L,
+                            celebrationSpeech = "Countdown started! Watch my StateFlow transition in 5 seconds!",
+                            lastEarnedXp = 0
                         )
                     }
                     _sideEffects.send(
