@@ -6,26 +6,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,13 +36,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAlert
 import androidx.compose.material.icons.filled.AlarmOn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
@@ -73,11 +60,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -87,26 +77,20 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -115,53 +99,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.database.NookiDatabase
 import com.example.data.local.entity.ReminderCategory
-import com.example.data.local.entity.ReminderKind
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderPriority
 import com.example.data.local.entity.ReminderStatus
-import com.example.data.repository.ReminderRepository
 import com.example.data.repository.ReminderRepositoryImpl
+import com.example.presentation.mvi.DeskIntent
+import com.example.presentation.mvi.DeskSideEffect
+import com.example.presentation.mvi.DeskUiState
+import com.example.presentation.ui.components.Nooki3DCenterpiece
+import com.example.presentation.viewmodel.DeskPetViewModel
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NookiSchedulerTelemetry
 import com.example.scheduler.NotificationHelper
-import com.example.scheduler.ScheduleResult
 import com.example.scheduler.SchedulerDiagnosticEntry
 import com.example.scheduler.receiver.ReminderAlarmReceiver
-import com.example.pet.NookiPet3D
-import com.example.pet.PetMood
-import com.example.pet.PetMoodResolver
-import com.example.ui.components.MoodBadge
-import com.example.ui.components.NookiSpeechBubble
-import com.example.ui.components.QuickAddSheet
-import com.example.ui.components.describeTrigger
-import com.example.workflow.WorkflowSchedule
-import com.example.ui.components.inferCategory
-import com.example.ui.components.toReminderPriority
-import com.example.feedback.PetFeedback
-import com.example.parser.SmartReminderParser
-import com.example.pet.LocalPetVoice
-import com.example.pet.PetAction
-import com.example.pet.PetTopic
-import com.example.pet.PetVoice
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.NookiAmberLight
 import com.example.ui.theme.NookiCoralAccent
 import com.example.ui.theme.NookiMintSuccess
 import com.example.ui.theme.NookiSkyInfo
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Nooki brings up anything due within this window (PRD FR-2.2). */
-private const val FOCUS_WINDOW_MILLIS = 30 * 60_000L
-
 class MainActivity : ComponentActivity() {
-    private var feedback: PetFeedback? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -170,58 +134,32 @@ class MainActivity : ComponentActivity() {
         val database = NookiDatabase.getInstance(applicationContext)
         val alarmScheduler = AndroidExactAlarmScheduler(applicationContext)
         val repository = ReminderRepositoryImpl(database.reminderDao(), alarmScheduler)
-        val petFeedback = PetFeedback(this).also { feedback = it }
 
         setContent {
             MyApplicationTheme {
-                NookiMilestoneOneWorkbench(
-                    repository = repository,
-                    alarmScheduler = alarmScheduler,
-                    feedback = petFeedback
+                val viewModel: DeskPetViewModel = viewModel(
+                    factory = DeskPetViewModel.Factory(repository, alarmScheduler)
+                )
+                NookiMainApp(
+                    viewModel = viewModel,
+                    alarmScheduler = alarmScheduler
                 )
             }
         }
     }
-
-    override fun onDestroy() {
-        feedback?.release()
-        feedback = null
-        super.onDestroy()
-    }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NookiMilestoneOneWorkbench(
-    repository: ReminderRepository,
-    alarmScheduler: AndroidExactAlarmScheduler,
-    feedback: PetFeedback? = null
+fun NookiMainApp(
+    viewModel: DeskPetViewModel,
+    alarmScheduler: AndroidExactAlarmScheduler
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-
-    val allReminders by repository.allReminders.collectAsStateWithLifecycle(initialValue = emptyList())
-    val activeReminders by repository.activeReminders.collectAsStateWithLifecycle(initialValue = emptyList())
-    val completedCount by repository.completedCount.collectAsStateWithLifecycle(initialValue = 0)
-    val totalXp by repository.totalEarnedXp.collectAsStateWithLifecycle(initialValue = 0)
-    val telemetryLogs by NookiSchedulerTelemetry.logs.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    var showQuickAdd by rememberSaveable { mutableStateOf(false) }
-    val smartParser = remember { SmartReminderParser() }
-    val petVoice = remember { LocalPetVoice() }
-
-    // Something that just happened (added / completed) that Nooki reacts to for a few seconds,
-    // before going back to talking about whatever is most pressing.
-    var eventTopic by remember { mutableStateOf<Pair<String, PetTopic>?>(null) }
-    LaunchedEffect(eventTopic) {
-        if (eventTopic != null) {
-            delay(7_000L)
-            eventTopic = null
-        }
-    }
 
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -247,101 +185,17 @@ fun NookiMilestoneOneWorkbench(
         )
     }
 
-    // Seed starter reminders on first launch & keep countdown clock ticking every second
-    LaunchedEffect(Unit) {
-        repository.seedStarterRemindersIfEmpty()
-        while (true) {
-            delay(1_000L)
-            nowMillis = System.currentTimeMillis()
-        }
-    }
-
-    val ringingReminders = remember(allReminders) {
-        allReminders.filter { it.status == ReminderStatus.RINGING }
-    }
-    val overdueReminders = remember(allReminders, nowMillis) {
-        allReminders.filter { it.isOverdue(nowMillis) && it.status != ReminderStatus.COMPLETED }
-    }
-    // Derived state only: Room stays the single source of truth for Nooki's mood.
-    val petMood = remember(allReminders, nowMillis) { PetMoodResolver.resolve(allReminders, nowMillis) }
-
-    // What Nooki talks about: ringing first, then overdue, then anything due in the next 30 min
-    // (the PRD's alert window).
-    val focusReminder = remember(allReminders, nowMillis) {
-        ringingReminders.firstOrNull()
-            ?: overdueReminders.minByOrNull { it.triggerAtMillis }
-            ?: activeReminders
-                .filter { it.triggerAtMillis - nowMillis in 0..FOCUS_WINDOW_MILLIS }
-                .minByOrNull { it.triggerAtMillis }
-    }
-    val (petTopicKey, petTopic) = eventTopic ?: run {
-        val focus = focusReminder
-        if (focus != null) {
-            val minutes = (focus.triggerAtMillis - nowMillis).floorDiv(60_000L)
-            val phase = when {
-                focus.status == ReminderStatus.RINGING || minutes in -1L..1L -> "now"
-                minutes < -1L -> "late"
-                else -> "soon"
+    LaunchedEffect(viewModel) {
+        viewModel.sideEffects.collect { effect ->
+            when (effect) {
+                is DeskSideEffect.ShowMessage -> snackbarHostState.showSnackbar(effect.message)
+                DeskSideEffect.TriggerHapticPulse -> NotificationHelper.triggerDeskPetPulseVibration(context)
             }
-            "focus_${focus.id}_$phase" to PetTopic.Focus(petMood, focus.title, minutes)
-        } else {
-            "idle_${petMood.name}_${activeReminders.size}" to PetTopic.Idle(petMood, activeReminders.size)
         }
     }
 
-    fun completeWithFeedback(reminder: ReminderEntity) {
-        feedback?.celebrate()
-        scope.launch {
-            repository.completeReminder(reminder.id)
-            NotificationHelper.cancelNotification(context, reminder.id)
-            eventTopic = "done_${reminder.id}" to PetTopic.Completed(PetMood.HAPPY, reminder.title)
-            snackbarHostState.showSnackbar("Nooki cheered! +${reminder.petMoodImpact} XP earned!")
-        }
-    }
-
-    fun snoozeWithFeedback(reminder: ReminderEntity, minutes: Int) {
-        feedback?.tap()
-        scope.launch {
-            repository.snoozeReminder(reminder.id, minutes)
-            NotificationHelper.cancelNotification(context, reminder.id)
-            snackbarHostState.showSnackbar("Snoozed '${reminder.title}' for $minutes min.")
-        }
-    }
-
-    if (showQuickAdd) {
-        QuickAddSheet(
-            nowMillis = nowMillis,
-            onDismiss = { showQuickAdd = false },
-            onChipTap = { feedback?.tap() },
-            onSubmit = { request ->
-                showQuickAdd = false
-                feedback?.confirm()
-                scope.launch {
-                    val parsed = smartParser.parse(request.rawInput)
-                    val triggerAt = parsed.triggerAtMillis ?: request.fallbackTriggerAtMillis
-                        ?: (System.currentTimeMillis() + 10 * 60_000L)
-                    val (entity, result) = repository.createAndScheduleReminder(
-                        title = parsed.title,
-                        rawInput = request.rawInput,
-                        triggerAtMillis = triggerAt,
-                        priority = parsed.priorityHint.toReminderPriority(),
-                        category = inferCategory(parsed.title),
-                        recurrenceMinutes = parsed.recurrenceMinutes,
-                        kind = parsed.kind,
-                        leadMinutes = parsed.leadMinutes,
-                        recurrenceRule = parsed.recurrenceRule
-                    )
-                    eventTopic = "added_${entity.id}" to PetTopic.Added(
-                        PetMood.HAPPY,
-                        entity.title,
-                        describeTrigger(entity.triggerAtMillis, System.currentTimeMillis())
-                    )
-                    if (result is ScheduleResult.Failed) {
-                        snackbarHostState.showSnackbar("Saved, but the alarm couldn't be set: ${result.errorMessage}")
-                    }
-                }
-            }
-        )
+    if (selectedTab != 0) {
+        BackHandler { selectedTab = 0 }
     }
 
     Scaffold(
@@ -359,10 +213,10 @@ fun NookiMilestoneOneWorkbench(
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Pets,
-                            contentDescription = "Nooki Desk Pet & Reminders"
+                            contentDescription = "3D Nooki Center Stage"
                         )
                     },
-                    label = { Text("Nooki Desk") },
+                    label = { Text("3D Nooki Stage") },
                     modifier = Modifier.testTag("nav_tab_desk")
                 )
                 NavigationBarItem(
@@ -371,15 +225,15 @@ fun NookiMilestoneOneWorkbench(
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Storage,
-                            contentDescription = "Milestone 1 Room & AlarmManager Lab"
+                            contentDescription = "Milestone 1 & 2 Diagnostics Lab"
                         )
                     },
                     label = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("M1 Scheduler Lab")
-                            if (telemetryLogs.isNotEmpty()) {
+                            Text("Scheduler Lab")
+                            if (uiState.telemetryLogs.isNotEmpty()) {
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Badge { Text("${telemetryLogs.size}") }
+                                Badge { Text("${uiState.telemetryLogs.size}") }
                             }
                         }
                     },
@@ -392,41 +246,20 @@ fun NookiMilestoneOneWorkbench(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.verticalGradient(
+                    Brush.radialGradient(
                         colors = listOf(
+                            Color(0xFF2B1E4A),
                             MaterialTheme.colorScheme.background,
-                            Color(0xFF1E1633),
-                            MaterialTheme.colorScheme.background
+                            Color(0xFF100C1C)
                         )
                     )
                 )
-                .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter
+                .padding(innerPadding)
         ) {
             if (selectedTab == 0) {
-                DeskPetReminderScreen(
-                    petMood = petMood,
-                    petTopic = petTopic,
-                    petTopicKey = petTopicKey,
-                    petVoice = petVoice,
-                    onPetAction = { action ->
-                        val focus = focusReminder
-                        if (focus != null && eventTopic == null) {
-                            when (action.id) {
-                                PetAction.MARK_DONE -> completeWithFeedback(focus)
-                                PetAction.SNOOZE_10M -> snoozeWithFeedback(focus, 10)
-                            }
-                        }
-                    },
-                    allReminders = allReminders,
-                    activeReminders = activeReminders,
-                    ringingReminders = ringingReminders,
-                    overdueReminders = overdueReminders,
-                    completedCount = completedCount,
-                    totalXp = totalXp,
-                    nowMillis = nowMillis,
+                Centered3DDeskPetStage(
+                    uiState = uiState,
                     hasNotificationPermission = hasNotificationPermission,
-                    canScheduleExact = alarmScheduler.canScheduleExactAlarms(),
                     onRequestNotificationPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -437,68 +270,361 @@ fun NookiMilestoneOneWorkbench(
                             runCatching { context.startActivity(intent) }
                         }
                     },
-                    onOpenQuickAdd = {
-                        feedback?.tap()
-                        showQuickAdd = true
-                    },
-                    onCompleteReminder = { reminder -> completeWithFeedback(reminder) },
-                    onSnoozeReminder = { reminder, mins -> snoozeWithFeedback(reminder, mins) },
-                    onFireAlarmNow = { reminder ->
+                    onIntent = viewModel::onIntent,
+                    onFireAlarmBroadcastNow = { reminder ->
                         val broadcastIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
                             action = AndroidExactAlarmScheduler.ACTION_TRIGGER_REMINDER_ALARM
                             putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_ID, reminder.id)
                             putExtra(AndroidExactAlarmScheduler.EXTRA_REMINDER_TITLE, reminder.title)
                         }
                         context.sendBroadcast(broadcastIntent)
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Dispatched exact alarm broadcast for '${reminder.title}'!")
-                        }
-                    },
-                    onDeleteReminder = { reminder ->
-                        scope.launch {
-                            repository.deleteReminder(reminder.id)
-                            NotificationHelper.cancelNotification(context, reminder.id)
-                        }
                     }
                 )
             } else {
                 MilestoneOneInspectorLab(
-                    allReminders = allReminders,
-                    telemetryLogs = telemetryLogs,
-                    canScheduleExact = alarmScheduler.canScheduleExactAlarms(),
-                    onSimulateBootRecovery = {
-                        scope.launch {
-                            val report = repository.reconcileAndRescheduleAlarms()
-                            NookiSchedulerTelemetry.record(
-                                source = "BootRecoverySim",
-                                message = "Manual Boot Recovery executed: rescheduled=${report.rescheduledCount}, missed=${report.markedMissedCount}"
+                    allReminders = uiState.allReminders,
+                    telemetryLogs = uiState.telemetryLogs,
+                    canScheduleExact = uiState.canScheduleExactAlarms,
+                    onSimulateBootRecovery = { viewModel.onIntent(DeskIntent.SimulateBootRecovery) },
+                    onSchedule5SecondTestAlarm = { viewModel.onIntent(DeskIntent.Schedule5SecondTestAlarm) },
+                    onClearCompleted = { viewModel.onIntent(DeskIntent.ClearCompleted) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen layout where the 3D Nooki model is anchored squarely at [Alignment.Center],
+ * flanked by a compact top status HUD and a bottom action bar that opens modal sheets for
+ * creating reminders or managing the queue.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Centered3DDeskPetStage(
+    uiState: DeskUiState,
+    hasNotificationPermission: Boolean,
+    onRequestNotificationPermission: () -> Unit,
+    onOpenExactAlarmSettings: () -> Unit,
+    onIntent: (DeskIntent) -> Unit,
+    onFireAlarmBroadcastNow: (ReminderEntity) -> Unit
+) {
+    val context = LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        // 1. TOP HUD: Level, XP Progress Bar, and Quick Stats (Anchored TopCenter)
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                tonalElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Nooki • Lv.${uiState.level}",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            snackbarHostState.showSnackbar(
-                                "Boot recovery: ${report.rescheduledCount} rescheduled, ${report.markedMissedCount} marked missed."
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "${uiState.totalXp} XP",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = NookiMintSuccess
                             )
                         }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HudMiniStat(
+                                label = "Scheduled",
+                                value = "${uiState.activeReminders.size}",
+                                color = NookiSkyInfo
+                            )
+                            HudMiniStat(
+                                label = "Done",
+                                value = "${uiState.completedCount}",
+                                color = NookiMintSuccess
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = {
+                            (uiState.xpInCurrentLevel.toFloat() / uiState.xpForNextLevel.toFloat())
+                                .coerceIn(0f, 1f)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(50)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+            }
+
+            if (!hasNotificationPermission || !uiState.canScheduleExactAlarms) {
+                PermissionStatusBanner(
+                    hasNotificationPermission = hasNotificationPermission,
+                    canScheduleExact = uiState.canScheduleExactAlarms,
+                    onRequestNotificationPermission = onRequestNotificationPermission,
+                    onOpenExactAlarmSettings = onOpenExactAlarmSettings
+                )
+            }
+
+            // Ringing alert overlay if an alarm is currently ringing
+            uiState.ringingReminders.firstOrNull()?.let { ringing ->
+                RingingAlertCard(
+                    reminder = ringing,
+                    onComplete = {
+                        NotificationHelper.cancelNotification(context, ringing.id)
+                        onIntent(DeskIntent.CompleteReminder(ringing))
                     },
-                    onSchedule5SecondTestAlarm = {
-                        scope.launch {
-                            val triggerAt = System.currentTimeMillis() + 5_000L
-                            val (entity, _) = repository.createAndScheduleReminder(
-                                title = "5-Second Exact Alarm Test",
-                                notes = "Verifies AlarmManager -> ReminderAlarmReceiver -> goAsync() -> Room RINGING",
-                                rawInput = "Test exact alarm in 5s",
-                                triggerAtMillis = triggerAt,
-                                priority = ReminderPriority.URGENT,
-                                category = ReminderCategory.DESK
-                            )
-                            snackbarHostState.showSnackbar(
-                                "Scheduled #${entity.id} for +5 seconds! Watch Nooki & Telemetry log."
-                            )
-                        }
+                    onSnooze = {
+                        NotificationHelper.cancelNotification(context, ringing.id)
+                        onIntent(DeskIntent.SnoozeReminder(ringing, 5))
+                    }
+                )
+            }
+        }
+
+        // 2. CENTERPIECE: 3D Nooki Model strictly at Alignment.Center
+        Nooki3DCenterpiece(
+            mood = uiState.petMood,
+            speechText = uiState.speechBubbleText,
+            isAutoRotateEnabled = uiState.isAutoRotate3DEnabled,
+            petCombo = uiState.petInteractionCombo,
+            onPetTap = { onIntent(DeskIntent.PetNookiHead) },
+            onToggleAutoRotate = { onIntent(DeskIntent.ToggleAutoRotate3D) },
+            modifier = Modifier.align(Alignment.Center)
+        )
+
+        // 3. BOTTOM DOCK: Next Up Preview + Quick Reminder & Queue Sheet Triggers (Anchored BottomCenter)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Next Scheduled Reminder Pill
+            val nextReminder = uiState.activeReminders.firstOrNull()
+            if (nextReminder != null) {
+                NextReminderDockCard(
+                    reminder = nextReminder,
+                    nowMillis = uiState.nowMillis,
+                    onComplete = {
+                        NotificationHelper.cancelNotification(context, nextReminder.id)
+                        onIntent(DeskIntent.CompleteReminder(nextReminder))
                     },
-                    onClearCompleted = {
-                        scope.launch {
-                            repository.clearCompletedReminders()
-                            snackbarHostState.showSnackbar("Cleared completed/cancelled rows from Room.")
-                        }
+                    onFireNow = { onFireAlarmBroadcastNow(nextReminder) },
+                    onOpenQueue = { onIntent(DeskIntent.SetQueueSheetOpen(true)) }
+                )
+            }
+
+            // Primary Action Buttons Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = { onIntent(DeskIntent.SetComposerSheetOpen(true)) },
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .weight(1.25f)
+                        .height(52.dp)
+                        .testTag("open_composer_button")
+                ) {
+                    Icon(Icons.Default.AddAlert, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("New Reminder", fontWeight = FontWeight.Bold)
+                }
+
+                FilledTonalButton(
+                    onClick = { onIntent(DeskIntent.SetQueueSheetOpen(true)) },
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .testTag("open_queue_button")
+                ) {
+                    Icon(Icons.Default.FormatListBulleted, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Queue (${uiState.activeReminders.size})")
+                }
+            }
+        }
+    }
+
+    // Modal Bottom Sheet: New Reminder Composer
+    if (uiState.isComposerSheetOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { onIntent(DeskIntent.SetComposerSheetOpen(false)) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            ReminderComposerSheetContent(
+                onSchedule = { title, notes, delayMins, priority, category ->
+                    onIntent(
+                        DeskIntent.ScheduleReminder(
+                            title = title,
+                            notes = notes,
+                            delayMinutes = delayMins,
+                            priority = priority,
+                            category = category
+                        )
+                    )
+                },
+                onSchedule5sTest = {
+                    onIntent(DeskIntent.SetComposerSheetOpen(false))
+                    onIntent(DeskIntent.Schedule5SecondTestAlarm)
+                }
+            )
+        }
+    }
+
+    // Modal Bottom Sheet: Active & Completed Reminder Queue
+    if (uiState.isQueueSheetOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { onIntent(DeskIntent.SetQueueSheetOpen(false)) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            ReminderQueueSheetContent(
+                activeReminders = uiState.activeReminders,
+                allReminders = uiState.allReminders,
+                nowMillis = uiState.nowMillis,
+                onComplete = { reminder ->
+                    NotificationHelper.cancelNotification(context, reminder.id)
+                    onIntent(DeskIntent.CompleteReminder(reminder))
+                },
+                onSnooze = { reminder, mins ->
+                    NotificationHelper.cancelNotification(context, reminder.id)
+                    onIntent(DeskIntent.SnoozeReminder(reminder, mins))
+                },
+                onFireNow = onFireAlarmBroadcastNow,
+                onDelete = { reminder ->
+                    NotificationHelper.cancelNotification(context, reminder.id)
+                    onIntent(DeskIntent.DeleteReminder(reminder))
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HudMiniStat(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun NextReminderDockCard(
+    reminder: ReminderEntity,
+    nowMillis: Long,
+    onComplete: () -> Unit,
+    onFireNow: () -> Unit,
+    onOpenQueue: () -> Unit
+) {
+    val diffMillis = reminder.triggerAtMillis - nowMillis
+    val countdown = remember(diffMillis, reminder.status) {
+        when {
+            reminder.status == ReminderStatus.RINGING -> "RINGING NOW"
+            diffMillis <= 0L -> "Due now"
+            diffMillis < 60_000L -> "in ${diffMillis / 1000L}s"
+            diffMillis < 3_600_000L -> "in ${diffMillis / 60_000L}m ${(diffMillis % 60_000L) / 1000L}s"
+            else -> "in ${diffMillis / 3_600_000L}h ${(diffMillis % 3_600_000L) / 60_000L}m"
+        }
+    }
+
+    Surface(
+        onClick = onOpenQueue,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 4.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "NEXT ALARM • $countdown",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NookiSkyInfo
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "+${reminder.petMoodImpact} XP",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NookiMintSuccess
+                    )
+                }
+                Text(
+                    text = reminder.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                AssistChip(
+                    onClick = onFireNow,
+                    label = { Text("Ring") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Trigger alarm now",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+                AssistChip(
+                    onClick = onComplete,
+                    label = { Text("Done") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Complete reminder",
+                            tint = NookiMintSuccess,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 )
             }
@@ -508,156 +634,194 @@ fun NookiMilestoneOneWorkbench(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeskPetReminderScreen(
-    petMood: PetMood,
-    petTopic: PetTopic,
-    petTopicKey: String,
-    petVoice: PetVoice,
-    onPetAction: (PetAction) -> Unit,
-    allReminders: List<ReminderEntity>,
-    activeReminders: List<ReminderEntity>,
-    ringingReminders: List<ReminderEntity>,
-    overdueReminders: List<ReminderEntity>,
-    completedCount: Int,
-    totalXp: Int,
-    nowMillis: Long,
-    hasNotificationPermission: Boolean,
-    canScheduleExact: Boolean,
-    onRequestNotificationPermission: () -> Unit,
-    onOpenExactAlarmSettings: () -> Unit,
-    onOpenQuickAdd: () -> Unit,
-    onCompleteReminder: (ReminderEntity) -> Unit,
-    onSnoozeReminder: (ReminderEntity, Int) -> Unit,
-    onFireAlarmNow: (ReminderEntity) -> Unit,
-    onDeleteReminder: (ReminderEntity) -> Unit
+private fun ReminderComposerSheetContent(
+    onSchedule: (String, String, Int, ReminderPriority, ReminderCategory) -> Unit,
+    onSchedule5sTest: () -> Unit
 ) {
-    LazyColumn(
+    var titleInput by rememberSaveable { mutableStateOf("") }
+    var notesInput by rememberSaveable { mutableStateOf("") }
+    var selectedDelayMins by rememberSaveable { mutableIntStateOf(10) }
+    var selectedPriority by rememberSaveable { mutableStateOf(ReminderPriority.MEDIUM) }
+    var selectedCategory by rememberSaveable { mutableStateOf(ReminderCategory.DESK) }
+
+    Column(
         modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 640.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header & Nooki Desk Stage
-        item {
-            NookiDeskHeroCard(
-                mood = petMood,
-                ringingCount = ringingReminders.size,
-                overdueCount = overdueReminders.size,
-                activeCount = activeReminders.size,
-                completedCount = completedCount,
-                totalXp = totalXp
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Schedule Exact Desk Reminder",
+                style = MaterialTheme.typography.titleLarge
             )
+            OutlinedButton(onClick = onSchedule5sTest) {
+                Text("+5s Test Alarm")
+            }
         }
 
-        // Nooki talks: streamed line + Done / Snooze chips (PRD FR-2.3, FR-2.4)
-        item {
-            NookiSpeechBubble(
-                topic = petTopic,
-                topicKey = petTopicKey,
-                voice = petVoice,
-                onAction = onPetAction
-            )
-        }
+        OutlinedTextField(
+            value = titleInput,
+            onValueChange = { titleInput = it },
+            label = { Text("What should Nooki remind you about?") },
+            placeholder = { Text("e.g., Drink water & stretch wrists") },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("reminder_title_input")
+        )
 
-        // Permission & Exact Alarm Status Banner if needed
-        if (!hasNotificationPermission || !canScheduleExact) {
-            item {
-                PermissionStatusBanner(
-                    hasNotificationPermission = hasNotificationPermission,
-                    canScheduleExact = canScheduleExact,
-                    onRequestNotificationPermission = onRequestNotificationPermission,
-                    onOpenExactAlarmSettings = onOpenExactAlarmSettings
+        OutlinedTextField(
+            value = notesInput,
+            onValueChange = { notesInput = it },
+            label = { Text("Optional desk note") },
+            placeholder = { Text("Extra context...") },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("reminder_notes_input")
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ReminderCategory.entries.forEach { category ->
+                FilterChip(
+                    selected = selectedCategory == category,
+                    onClick = { selectedCategory = category },
+                    label = { Text(category.label) }
                 )
             }
         }
 
-        // Active Ringing Banner (High-urgency desk alert)
-        items(ringingReminders, key = { "ringing_${it.id}" }) { ringing ->
-            RingingAlertCard(
-                reminder = ringing,
-                onComplete = { onCompleteReminder(ringing) },
-                onSnooze = { onSnoozeReminder(ringing, 5) }
-            )
-        }
-
-        // Quick add: one line of plain text instead of pickers (PRD FR-1)
-        item {
-            Surface(
-                onClick = onOpenQuickAdd,
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("open_quick_add")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AddAlert,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Tell Nooki what to remember", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "\u201CCall mom tomorrow at 6pm\u201D",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(1 to "In 1m", 5 to "In 5m", 15 to "In 15m", 30 to "In 30m", 60 to "In 1h").forEach { (mins, label) ->
+                FilterChip(
+                    selected = selectedDelayMins == mins,
+                    onClick = { selectedDelayMins = mins },
+                    label = { Text(label) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
-                }
+                )
             }
         }
 
-        // Section Title for Active Queue
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Active Desk Queue (${activeReminders.size})",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = "Room Flow + AlarmManager",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ReminderPriority.entries.forEach { priority ->
+                FilterChip(
+                    selected = selectedPriority == priority,
+                    onClick = { selectedPriority = priority },
+                    label = { Text(priority.label) },
+                    modifier = Modifier.weight(1f)
                 )
             }
+        }
+
+        Button(
+            onClick = {
+                val cleanTitle = titleInput.trim().ifBlank {
+                    "Desk check-in with Nooki (${selectedCategory.label})"
+                }
+                onSchedule(
+                    cleanTitle,
+                    notesInput,
+                    selectedDelayMins,
+                    selectedPriority,
+                    selectedCategory
+                )
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("schedule_reminder_button")
+        ) {
+            Icon(Icons.Default.AlarmOn, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Schedule Exact Alarm (in ${selectedDelayMins}m)",
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ReminderQueueSheetContent(
+    activeReminders: List<ReminderEntity>,
+    allReminders: List<ReminderEntity>,
+    nowMillis: Long,
+    onComplete: (ReminderEntity) -> Unit,
+    onSnooze: (ReminderEntity, Int) -> Unit,
+    onFireNow: (ReminderEntity) -> Unit,
+    onDelete: (ReminderEntity) -> Unit
+) {
+    val completedList = remember(allReminders) {
+        allReminders.filter { it.status == ReminderStatus.COMPLETED }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                text = "Active Desk Queue (${activeReminders.size})",
+                style = MaterialTheme.typography.titleLarge
+            )
         }
 
         if (activeReminders.isEmpty()) {
             item {
-                EmptyRemindersCard()
+                Text(
+                    text = "No active alarms queued. Nooki is resting peacefully at the center of your desk!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             items(activeReminders, key = { it.id }) { reminder ->
                 ReminderQueueItemCard(
                     reminder = reminder,
                     nowMillis = nowMillis,
-                    onComplete = { onCompleteReminder(reminder) },
-                    onSnooze = { onSnoozeReminder(reminder, 5) },
-                    onFireNow = { onFireAlarmNow(reminder) },
-                    onDelete = { onDeleteReminder(reminder) }
+                    onComplete = { onComplete(reminder) },
+                    onSnooze = { onSnooze(reminder, 5) },
+                    onFireNow = { onFireNow(reminder) },
+                    onDelete = { onDelete(reminder) }
                 )
             }
         }
 
-        // Completed history preview
-        val completedList = allReminders.filter { it.status == ReminderStatus.COMPLETED }
         if (completedList.isNotEmpty()) {
             item {
                 Text(
-                    text = "Recently Completed (${completedList.size})",
+                    text = "Completed (${completedList.size})",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -666,298 +830,9 @@ private fun DeskPetReminderScreen(
             items(completedList.take(5), key = { "done_${it.id}" }) { done ->
                 CompletedReminderRow(
                     reminder = done,
-                    onDelete = { onDeleteReminder(done) }
+                    onDelete = { onDelete(done) }
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun NookiDeskHeroCard(
-    mood: PetMood,
-    ringingCount: Int,
-    overdueCount: Int,
-    activeCount: Int,
-    completedCount: Int,
-    totalXp: Int
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "nooki_pet_breath")
-    val bounceOffset by infiniteTransition.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (ringingCount > 0) 380 else 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "nooki_bounce"
-    )
-
-    val moodState = when (mood) {
-        PetMood.ALERT ->
-            if (ringingCount > 0) "Alert: Nooki is ringing your desk bell!" else mood.caption
-        PetMood.OVERWHELMED -> "Overwhelmed: $overdueCount overdue task(s) waiting"
-        PetMood.HAPPY -> if (activeCount > 0) "Happy: watching $activeCount alarm(s)" else mood.caption
-        PetMood.SLEEPING -> mood.caption
-    }
-
-    // Contextual color: urgency shifts the aura, the 3D stage and the badge together.
-    val auraColor by animateColorAsState(
-        targetValue = when (mood) {
-            PetMood.SLEEPING -> NookiSkyInfo
-            PetMood.HAPPY -> NookiMintSuccess
-            PetMood.ALERT -> NookiAmberLight
-            PetMood.OVERWHELMED -> NookiCoralAccent
-        },
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "nooki_aura_color"
-    )
-    val cardColor = MaterialTheme.colorScheme.surfaceVariant
-    val stageColor = lerp(MaterialTheme.colorScheme.surface, auraColor, 0.16f)
-    // Asymmetric, hand-tuned corners instead of a uniform template radius.
-    val heroShape = RoundedCornerShape(topStart = 36.dp, topEnd = 14.dp, bottomEnd = 36.dp, bottomStart = 22.dp)
-
-    val level = (totalXp / 50) + 1
-    val xpInLevel = totalXp % 50
-
-    Card(
-        shape = heroShape,
-        colors = CardDefaults.cardColors(containerColor = cardColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                width = 1.5.dp,
-                color = auraColor.copy(alpha = 0.55f),
-                shape = heroShape
-            )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MoodBadge(
-                    mood = mood,
-                    color = auraColor,
-                    contentColor = MaterialTheme.colorScheme.background,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Nooki • Lv.$level Desk Spirit",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = moodState,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Text(
-                        text = "$totalXp XP ($xpInLevel/50)",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Real-time 3D desk pet (SceneView/Filament). The original 2D Canvas pet stays as a
-            // fallback for Compose previews and devices where the model can't load.
-            NookiPet3D(
-                mood = mood,
-                stageColor = stageColor,
-                surroundColor = cardColor,
-                cornerRadius = 26.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(230.dp)
-                    .testTag("nooki_pet_3d"),
-                fallback = {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val centerX = size.width / 2f
-                            val centerY = size.height / 2f + bounceOffset
-
-                            // Desk wooden mat surface
-                            drawRoundRect(
-                                color = Color(0xFF3E2723),
-                                topLeft = Offset(centerX - 135.dp.toPx(), size.height - 24.dp.toPx()),
-                                size = Size(270.dp.toPx(), 16.dp.toPx()),
-                                cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx())
-                            )
-
-                            // Soft radial glow behind Nooki
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(auraColor.copy(alpha = 0.32f), Color.Transparent),
-                                    center = Offset(centerX, centerY),
-                                    radius = 75.dp.toPx()
-                                ),
-                                radius = 75.dp.toPx(),
-                                center = Offset(centerX, centerY)
-                            )
-
-                            // Ears
-                            val leftEar = Path().apply {
-                                moveTo(centerX - 38.dp.toPx(), centerY - 18.dp.toPx())
-                                lineTo(centerX - 50.dp.toPx(), centerY - 52.dp.toPx())
-                                lineTo(centerX - 16.dp.toPx(), centerY - 36.dp.toPx())
-                                close()
-                            }
-                            val rightEar = Path().apply {
-                                moveTo(centerX + 38.dp.toPx(), centerY - 18.dp.toPx())
-                                lineTo(centerX + 50.dp.toPx(), centerY - 52.dp.toPx())
-                                lineTo(centerX + 16.dp.toPx(), centerY - 36.dp.toPx())
-                                close()
-                            }
-                            drawPath(leftEar, color = Color(0xFFF59E0B))
-                            drawPath(rightEar, color = Color(0xFFF59E0B))
-
-                            // Nooki chubby body
-                            drawOval(
-                                color = Color(0xFFFBBF24),
-                                topLeft = Offset(centerX - 50.dp.toPx(), centerY - 38.dp.toPx()),
-                                size = Size(100.dp.toPx(), 84.dp.toPx())
-                            )
-
-                            // Cream belly/cheek patch
-                            drawOval(
-                                color = Color(0xFFFFFBEB),
-                                topLeft = Offset(centerX - 38.dp.toPx(), centerY - 10.dp.toPx()),
-                                size = Size(76.dp.toPx(), 52.dp.toPx())
-                            )
-
-                            // Eyes (wide alert if ringing, cozy arcs or dots otherwise)
-                            val eyeY = centerY - 6.dp.toPx()
-                            val leftEyeX = centerX - 18.dp.toPx()
-                            val rightEyeX = centerX + 18.dp.toPx()
-                            val eyeRadius = if (ringingCount > 0) 6.5.dp.toPx() else 5.dp.toPx()
-
-                            drawCircle(
-                                color = Color(0xFF1E1B4B),
-                                radius = eyeRadius,
-                                center = Offset(leftEyeX, eyeY)
-                            )
-                            drawCircle(
-                                color = Color(0xFF1E1B4B),
-                                radius = eyeRadius,
-                                center = Offset(rightEyeX, eyeY)
-                            )
-                            // Eye shine
-                            drawCircle(
-                                color = Color.White,
-                                radius = 2.dp.toPx(),
-                                center = Offset(leftEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 2.dp.toPx(),
-                                center = Offset(rightEyeX - 1.5.dp.toPx(), eyeY - 1.5.dp.toPx())
-                            )
-
-                            // Rosy cheeks
-                            drawCircle(
-                                color = NookiCoralAccent.copy(alpha = 0.65f),
-                                radius = 6.dp.toPx(),
-                                center = Offset(leftEyeX - 10.dp.toPx(), eyeY + 9.dp.toPx())
-                            )
-                            drawCircle(
-                                color = NookiCoralAccent.copy(alpha = 0.65f),
-                                radius = 6.dp.toPx(),
-                                center = Offset(rightEyeX + 10.dp.toPx(), eyeY + 9.dp.toPx())
-                            )
-
-                            // Nose & Mouth
-                            drawCircle(
-                                color = Color(0xFFEA580C),
-                                radius = 3.5.dp.toPx(),
-                                center = Offset(centerX, eyeY + 8.dp.toPx())
-                            )
-                            drawArc(
-                                color = Color(0xFF1E1B4B),
-                                startAngle = 15f,
-                                sweepAngle = 150f,
-                                useCenter = false,
-                                topLeft = Offset(centerX - 8.dp.toPx(), eyeY + 10.dp.toPx()),
-                                size = Size(16.dp.toPx(), 10.dp.toPx()),
-                                style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-                            )
-                        }
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Summary Stat Pills
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatPill(
-                    label = "Scheduled",
-                    value = "$activeCount",
-                    tint = NookiSkyInfo,
-                    modifier = Modifier.weight(1f)
-                )
-                StatPill(
-                    label = "Ringing",
-                    value = "$ringingCount",
-                    tint = if (ringingCount > 0) NookiCoralAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                StatPill(
-                    label = "Completed",
-                    value = "$completedCount",
-                    tint = NookiMintSuccess,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatPill(
-    label: String,
-    value: String,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                color = tint
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -970,17 +845,20 @@ private fun PermissionStatusBanner(
     onOpenExactAlarmSettings: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 Icon(
                     imageVector = Icons.Outlined.Notifications,
                     contentDescription = null,
@@ -988,30 +866,24 @@ private fun PermissionStatusBanner(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "System Alarm & Notification Readiness",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "Enable alarm permissions",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (!hasNotificationPermission) {
-                    FilledTonalButton(
-                        onClick = onRequestNotificationPermission,
-                        modifier = Modifier.testTag("grant_notifications_button")
-                    ) {
-                        Text("Allow Notifications")
-                    }
+            if (!hasNotificationPermission) {
+                FilledTonalButton(
+                    onClick = onRequestNotificationPermission,
+                    modifier = Modifier.testTag("grant_notifications_button")
+                ) {
+                    Text("Allow Alerts")
                 }
-                if (!canScheduleExact) {
-                    OutlinedButton(
-                        onClick = onOpenExactAlarmSettings,
-                        modifier = Modifier.testTag("exact_alarm_settings_button")
-                    ) {
-                        Text("Enable Exact Alarms")
-                    }
+            } else if (!canScheduleExact) {
+                OutlinedButton(
+                    onClick = onOpenExactAlarmSettings,
+                    modifier = Modifier.testTag("exact_alarm_settings_button")
+                ) {
+                    Text("Exact Alarms")
                 }
             }
         }
@@ -1025,17 +897,15 @@ private fun RingingAlertCard(
     onSnooze: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF4C1D24)
-        ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF4C1D24)),
         modifier = Modifier
             .fillMaxWidth()
-            .border(2.dp, NookiCoralAccent, RoundedCornerShape(22.dp))
+            .border(2.dp, NookiCoralAccent, RoundedCornerShape(20.dp))
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -1045,21 +915,9 @@ private fun RingingAlertCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "NOOKI DESK BELL RINGING!",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = NookiCoralAccent
-                )
-            }
-            Text(
-                text = reminder.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
-            )
-            if (reminder.notes.isNotBlank()) {
-                Text(
-                    text = reminder.notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f)
+                    text = "NOOKI 3D BELL RINGING: ${reminder.title}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
                 )
             }
             Row(
@@ -1069,18 +927,13 @@ private fun RingingAlertCard(
                 Button(
                     onClick = onComplete,
                     colors = ButtonDefaults.buttonColors(containerColor = NookiMintSuccess),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("complete_ringing_${reminder.id}")
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Black)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Complete (+${reminder.petMoodImpact} XP)", color = Color.Black)
                 }
-                FilledTonalButton(
-                    onClick = onSnooze,
-                    modifier = Modifier.testTag("snooze_ringing_${reminder.id}")
-                ) {
+                FilledTonalButton(onClick = onSnooze) {
                     Icon(Icons.Default.Snooze, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Snooze 5m")
@@ -1107,41 +960,18 @@ private fun ReminderQueueItemCard(
             diffMillis <= 0L -> "Due now"
             diffMillis < 60_000L -> "in ${diffMillis / 1000L}s"
             diffMillis < 3_600_000L -> "in ${diffMillis / 60_000L}m ${(diffMillis % 60_000L) / 1000L}s"
-            diffMillis < 24 * 3_600_000L -> "in ${diffMillis / 3_600_000L}h ${(diffMillis % 3_600_000L) / 60_000L}m"
-            else -> WorkflowSchedule.countdown(reminder.triggerAtMillis, nowMillis)
+            else -> "in ${diffMillis / 3_600_000L}h ${(diffMillis % 3_600_000L) / 60_000L}m"
         }
     }
 
-    val farAway = diffMillis >= 24 * 3_600_000L
-    val formattedClock = remember(reminder.triggerAtMillis, farAway) {
-        SimpleDateFormat(if (farAway) "EEE, MMM d · h:mm a" else "h:mm:ss a", Locale.getDefault())
-            .format(Date(reminder.triggerAtMillis))
-    }
-    val workflowLine = remember(reminder.triggerAtMillis, reminder.leadTimes, reminder.recurrenceRule, nowMillis / 60_000L) {
-        val leads = WorkflowSchedule.upcomingLeads(
-            reminder.triggerAtMillis,
-            WorkflowSchedule.decodeLeadTimes(reminder.leadTimes),
-            nowMillis
-        )
-        listOfNotNull(
-            leads.takeIf { it.isNotEmpty() }?.let { list ->
-                "Heads-ups " + list.joinToString(", ") { WorkflowSchedule.describeLead(it) } + " before"
-            },
-            reminder.recurrenceRule?.label,
-            reminder.recurrenceMinutes?.takeIf { reminder.recurrenceRule == null }?.let {
-                "Every " + WorkflowSchedule.describeLead(it)
-            }
-        ).joinToString(" · ")
+    val formattedClock = remember(reminder.triggerAtMillis) {
+        SimpleDateFormat("h:mm:ss a", Locale.getDefault()).format(Date(reminder.triggerAtMillis))
     }
 
     Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("reminder_card_${reminder.id}")
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -1152,98 +982,34 @@ private fun ReminderQueueItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val isWorkflow = reminder.kind != ReminderKind.TASK
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isWorkflow) MaterialTheme.colorScheme.tertiaryContainer
-                        else MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = if (isWorkflow) reminder.kind.badgeText else reminder.category.badgeText,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isWorkflow) MaterialTheme.colorScheme.onTertiaryContainer
-                            else MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = "${reminder.priority.label} • +${reminder.petMoodImpact} XP",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                    if (reminder.snoozeCount > 0) {
-                        Text(
-                            text = "Snoozed ×${reminder.snoozeCount}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NookiAmberLight
-                        )
-                    }
-                }
-
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(36.dp)
-                ) {
+                Text(
+                    text = "${reminder.category.badgeText} • ${reminder.priority.label} (+${reminder.petMoodImpact} XP)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = "Delete reminder",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = "Delete reminder"
                     )
                 }
             }
 
             Text(
                 text = reminder.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                style = MaterialTheme.typography.titleMedium
             )
-
-            if (reminder.notes.isNotBlank()) {
-                Text(
-                    text = reminder.notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (workflowLine.isNotBlank()) {
-                Text(
-                    text = workflowLine,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = null,
-                        tint = NookiSkyInfo,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "$formattedClock ($countdownLabel)",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = NookiSkyInfo
-                    )
-                }
-
+                Text(
+                    text = "$formattedClock ($countdownLabel)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = NookiSkyInfo
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AssistChip(
                         onClick = onFireNow,
@@ -1251,22 +1017,14 @@ private fun ReminderQueueItemCard(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Trigger alarm broadcast now",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.testTag("trigger_now_${reminder.id}")
-                    )
-                    AssistChip(
-                        onClick = onSnooze,
-                        label = { Text("+5m") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Snooze,
-                                contentDescription = "Snooze 5 minutes",
+                                contentDescription = "Trigger now",
                                 modifier = Modifier.size(16.dp)
                             )
                         }
+                    )
+                    AssistChip(
+                        onClick = onSnooze,
+                        label = { Text("+5m") }
                     )
                     AssistChip(
                         onClick = onComplete,
@@ -1274,15 +1032,14 @@ private fun ReminderQueueItemCard(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Complete reminder",
+                                contentDescription = "Complete",
                                 tint = NookiMintSuccess,
                                 modifier = Modifier.size(16.dp)
                             )
                         },
                         colors = AssistChipDefaults.assistChipColors(
                             leadingIconContentColor = NookiMintSuccess
-                        ),
-                        modifier = Modifier.testTag("complete_btn_${reminder.id}")
+                        )
                     )
                 }
             }
@@ -1297,7 +1054,7 @@ private fun CompletedReminderRow(
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1307,10 +1064,7 @@ private fun CompletedReminderRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
@@ -1331,45 +1085,9 @@ private fun CompletedReminderRow(
                 Icon(
                     imageVector = Icons.Default.DeleteOutline,
                     contentDescription = "Delete completed reminder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun EmptyRemindersCard() {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Pets,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp)
-            )
-            Text(
-                text = "Nooki's Desk Queue is Clear!",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "Schedule a reminder above to register an exact PendingIntent with AlarmManager.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -1410,7 +1128,7 @@ private fun MilestoneOneInspectorLab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Milestone 1: Data & Scheduler Diagnostics",
+                            text = "Data & Scheduler Diagnostics Lab",
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
