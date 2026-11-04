@@ -9,17 +9,11 @@ import com.example.core.parse.UnderstoodText
 import com.example.core.parse.MoneyDirection
 import com.example.core.today.KnotRef
 import com.example.core.today.TodayBuilder
-import com.example.core.today.TodayMoney
-import com.example.core.today.TodayNotice
-import com.example.core.today.TodayNoticeType
-import com.example.core.today.TodayReminder
 import com.example.data.local.database.AppDatabase
+import com.example.data.today.toToday
 import com.example.data.local.entity.MoneyDirectionColumn
 import com.example.data.local.entity.MoneyEntryEntity
-import com.example.data.local.entity.NoticedItemEntity
 import com.example.data.local.entity.NoticedStatus
-import com.example.data.local.entity.NoticedType
-import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderStatus
 import com.example.data.local.entity.SavedThingEntity
 import com.example.data.repository.ReminderRepositoryImpl
@@ -27,6 +21,7 @@ import com.example.data.settings.NookiSettings
 import com.example.scheduler.AndroidExactAlarmScheduler
 import com.example.scheduler.NotificationHelper
 import com.example.scheduler.ScheduleResult
+import com.example.widget.NookiWidget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -35,6 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -42,7 +40,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.util.TimeZone
 
 class TodayViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -52,6 +49,9 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = NookiSettings(application)
 
     private val draft = MutableStateFlow("")
+
+    /** The widget refreshes only when what it shows changes, not every minute. */
+    private val widgetSummary = MutableStateFlow<List<Any?>>(emptyList())
     private val answer = MutableStateFlow<Answer?>(null)
     private val effects = Channel<TodayEffect>(Channel.BUFFERED)
     val effect: Flow<TodayEffect> = effects.receiveAsFlow()
@@ -77,6 +77,13 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             nowMillis = now,
         ) to now
     }.flowOn(Dispatchers.Default)
+        .onEach { (b, _) -> widgetSummary.value = listOf(b.mood, b.missed.size, b.forgot.size, b.todo.size, b.ringing?.line, b.todo.firstOrNull()?.line) }
+
+    init {
+        viewModelScope.launch {
+            widgetSummary.drop(1).distinctUntilChanged().collect { NookiWidget.refresh(getApplication()) }
+        }
+    }
 
     val state: StateFlow<TodayState> = combine(
         board, draft, answer, settings.noticeSettings, settings.noticingOfferHidden,
@@ -197,51 +204,3 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-private fun ReminderEntity.toToday() = TodayReminder(
-    id = id,
-    title = title,
-    kind = kind,
-    triggerAtMillis = triggerAtMillis,
-    hasTime = hasTime,
-    isDone = status == ReminderStatus.COMPLETED,
-    completedAtMillis = completedAtMillis,
-    isMissed = status == ReminderStatus.MISSED,
-    snoozeCount = snoozeCount,
-    createdAtMillis = createdAtMillis,
-    isRinging = status == ReminderStatus.RINGING,
-)
-
-private fun MoneyEntryEntity.toToday() = TodayMoney(
-    id = id,
-    person = person,
-    theyOweMe = direction == MoneyDirectionColumn.THEY_OWE_ME,
-    amountPaise = amountPaise,
-    thing = thing,
-    sinceMillis = createdAtMillis,
-)
-
-private fun NoticedItemEntity.toToday(): TodayNotice {
-    val dueAt = if (dueDay != null && dueMonth != null) {
-        Calendar.getInstance(TimeZone.getDefault()).apply {
-            val now = timeInMillis
-            set(Calendar.MONTH, dueMonth - 1)
-            set(Calendar.DAY_OF_MONTH, dueDay)
-            set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            if (dueYear != null) set(Calendar.YEAR, dueYear) else if (timeInMillis < now - 30L * 86_400_000L) add(Calendar.YEAR, 1)
-        }.timeInMillis
-    } else {
-        null
-    }
-    return TodayNotice(
-        id = id,
-        type = when (type) {
-            NoticedType.MISSED_CALL -> TodayNoticeType.MISSED_CALL
-            NoticedType.UNREAD_MESSAGE -> TodayNoticeType.UNREAD_MESSAGE
-            NoticedType.BILL -> TodayNoticeType.BILL
-        },
-        who = who,
-        amountPaise = amountPaise,
-        dueAtMillis = dueAt,
-        noticedAtMillis = noticedAtMillis,
-    )
-}

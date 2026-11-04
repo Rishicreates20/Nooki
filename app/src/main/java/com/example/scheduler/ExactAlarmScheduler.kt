@@ -120,6 +120,7 @@ class AndroidExactAlarmScheduler(
             errorMessage = "AlarmManager service unavailable on this device."
         )
 
+        WarningScheduler.scheduleNext(context, reminder)
         val pendingIntent = createTriggerPendingIntent(reminder)
         val safeTriggerMillis = reminder.triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L)
 
@@ -214,6 +215,7 @@ class AndroidExactAlarmScheduler(
     }
 
     override fun cancel(reminderId: Long) {
+        WarningScheduler.cancel(context, reminderId)
         val manager = alarmManager ?: return
         val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
             action = ACTION_TRIGGER_REMINDER_ALARM

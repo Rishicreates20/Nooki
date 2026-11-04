@@ -7,6 +7,7 @@ import com.example.core.notice.RawNotification
 import com.example.data.local.database.AppDatabase
 import com.example.data.notice.NoticeIngestor
 import com.example.data.settings.NookiSettings
+import com.example.widget.NookiWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,7 +42,8 @@ class NookiNotificationListener : NotificationListenerService() {
         )
         val key = sbn.key
         scope.launch {
-            runCatching { ingestor.ingest(raw, settings.currentNoticeSettings(), key) }
+            val saved = runCatching { ingestor.ingest(raw, settings.currentNoticeSettings(), key) }.getOrNull()
+            if (saved != null) NookiWidget.refresh(applicationContext)
         }
     }
 

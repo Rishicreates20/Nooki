@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Nooki</string>
     <string name="tell_nooki">Tell Nooki</string>
+    <string name="widget_description">Nooki\'s mood and what needs you today</string>
     <string name="channel_alarms_name">Reminders</string>
     <string name="channel_alarms_description">The things you asked Nooki to remind you about</string>
     <string name="action_complete">Done</string>

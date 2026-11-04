@@ -47,6 +47,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -82,6 +84,7 @@ fun TodayScreen(
     onVoice: () -> Unit,
     noticingOn: Boolean,
     onOpenNoticing: () -> Unit,
+    focusCaptureTick: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     // The one moment of motion: when the app opens, the thread drops from Nooki.
@@ -148,7 +151,7 @@ fun TodayScreen(
                 }
             }
         }
-        TellNookiBar(state, onIntent, onVoice)
+        TellNookiBar(state, onIntent, onVoice, focusCaptureTick)
     }
 }
 
@@ -381,7 +384,9 @@ private fun EveningWrap(onMove: () -> Unit) {
 }
 
 @Composable
-private fun TellNookiBar(state: TodayState, onIntent: (TodayIntent) -> Unit, onVoice: () -> Unit) {
+private fun TellNookiBar(state: TodayState, onIntent: (TodayIntent) -> Unit, onVoice: () -> Unit, focusTick: Int) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(focusTick) { if (focusTick > 0) runCatching { focus.requestFocus() } }
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             if (state.preview.isNotEmpty()) {
@@ -397,7 +402,7 @@ private fun TellNookiBar(state: TodayState, onIntent: (TodayIntent) -> Unit, onV
                     value = state.draft,
                     onValueChange = { onIntent(TodayIntent.EditDraft(it)) },
                     placeholder = { Text("Tell Nooki… kal subah 9 baje doctor") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(focus),
                     shape = RoundedCornerShape(28.dp),
                     maxLines = 3,
                     textStyle = MaterialTheme.typography.bodyLarge,

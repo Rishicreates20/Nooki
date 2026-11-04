@@ -47,6 +47,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                         isWarning = true
                     )
                 }
+                com.example.widget.NookiWidget.refresh(appContext)
             } catch (t: Throwable) {
                 NookiSchedulerTelemetry.record(
                     source = "ReminderAlarmReceiver",

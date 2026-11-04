@@ -63,6 +63,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
                         )
                     }
                 }
+                com.example.widget.NookiWidget.refresh(appContext)
             } catch (t: Throwable) {
                 NookiSchedulerTelemetry.record(
                     source = "ReminderActionReceiver",

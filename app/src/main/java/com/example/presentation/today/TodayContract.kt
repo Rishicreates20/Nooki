@@ -2,7 +2,6 @@ package com.example.presentation.today
 
 import com.example.core.notice.NoticeSettings
 import com.example.core.today.Knot
-import com.example.core.notice.NoticeSettings
 import com.example.core.today.KnotRef
 import com.example.core.today.TodayBoard
 

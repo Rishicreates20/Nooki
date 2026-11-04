@@ -26,6 +26,9 @@ import com.example.scheduler.receiver.ReminderActionReceiver
 object NotificationHelper {
 
     const val CHANNEL_ID_ALARMS = "nooki_desk_pet_alarms"
+    /** Warnings ahead of the day and the daily notes. Quiet: no sound, no vibration. */
+    const val CHANNEL_ID_QUIET = "nooki_quiet"
+    private const val DAILY_NOTE_ID = 1_000_001
 
     fun ensureChannelCreated(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -45,7 +48,56 @@ object NotificationHelper {
                 }
                 manager.createNotificationChannel(channel)
             }
+            if (manager.getNotificationChannel(CHANNEL_ID_QUIET) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID_QUIET, "Heads-ups and daily notes", NotificationManager.IMPORTANCE_LOW).apply {
+                        description = "Warnings before bills, birthdays and expiries, the morning brief and the evening wrap"
+                    }
+                )
+            }
         }
+    }
+
+    fun showWarning(context: Context, reminder: ReminderEntity, whenText: String) {
+        ensureChannelCreated(context)
+        val open = PendingIntent.getActivity(
+            context,
+            reminder.id.toInt() + 500_000,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val n = NotificationCompat.Builder(context, CHANNEL_ID_QUIET)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(reminder.title)
+            .setContentText(whenText)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(reminder.id.toInt() + 500_000, n) }
+    }
+
+    /** Morning brief or evening wrap. One calm note; replaces the previous one. */
+    fun showDailyNote(context: Context, title: String, body: String, moveAction: PendingIntent?) {
+        ensureChannelCreated(context)
+        val open = PendingIntent.getActivity(
+            context,
+            DAILY_NOTE_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID_QUIET)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        if (moveAction != null) builder.addAction(0, "Move to tomorrow", moveAction)
+        runCatching { NotificationManagerCompat.from(context).notify(DAILY_NOTE_ID, builder.build()) }
+    }
+
+    fun cancelDailyNote(context: Context) {
+        NotificationManagerCompat.from(context).cancel(DAILY_NOTE_ID)
     }
 
     fun showReminderAlarmNotification(context: Context, reminder: ReminderEntity) {

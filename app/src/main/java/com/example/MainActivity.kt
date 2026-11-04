@@ -24,6 +24,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +37,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.notice.NookiNotificationListener
+import com.example.rhythm.DailyRhythm
 import com.example.presentation.today.NoticingSheet
 import com.example.presentation.today.TodayEffect
 import com.example.presentation.today.TodayIntent
@@ -53,10 +55,14 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: TodayViewModel by viewModels()
 
+    /** Bumped when opened from the tile or the app-icon shortcut, to focus "Tell Nooki". */
+    private val focusCapture = mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationHelper.ensureChannelCreated(this)
+        DailyRhythm.schedule(this)
         handleIncomingText(intent)
 
         setContent {
@@ -114,6 +120,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onIntent = viewModel::onIntent,
                         noticingOn = listenerOn,
+                        focusCaptureTick = focusCapture.intValue,
                         onOpenNoticing = { showNoticing = true },
                         onVoice = {
                             val speech = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -174,11 +181,20 @@ class MainActivity : ComponentActivity() {
 
     /** Text shared from another app, or selected text sent with "Tell Nooki". */
     private fun handleIncomingText(intent: Intent?) {
+        if (intent?.action == ACTION_TELL) focusCapture.intValue++
         val text = when (intent?.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             else -> null
         }
-        if (!text.isNullOrBlank()) viewModel.prefill(text)
+        if (!text.isNullOrBlank()) {
+            viewModel.prefill(text)
+            focusCapture.intValue++
+        }
+    }
+
+    companion object {
+        /** Opens straight into "Tell Nooki" (quick settings tile, app-icon shortcut). */
+        const val ACTION_TELL = "com.example.nooki.TELL"
     }
 }
