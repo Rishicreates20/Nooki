@@ -1,0 +1,6 @@
+{
+  "name": "Nooki",
+  "description": "The Desk-Pet Reminder: A cozy native Android companion with Room persistence, exact AlarmManager scheduling, boot recovery, reactive state machine, and natural language reminder parsing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
