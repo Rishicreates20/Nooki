@@ -48,14 +48,15 @@ through exact alarms, and they survive reboots, time-zone changes and app update
 
 1. **Get the app.** Download the APK (see [Get the app](#get-the-app)) and tap it to install.
    Allow installs from your browser or file manager if Android asks.
-2. **Say yes twice.** Tap **Allow Notifications** and **Enable Exact Alarms** so reminders ring
-   on time, even in battery saver.
+2. **Allow the asks.** If Nooki shows **Allow Notifications** or **Enable Exact Alarms**, tap it
+   so reminders ring on time. Each button only appears while that permission is missing, and older
+   Android versions need neither.
 3. **Tell Nooki.** Add a reminder with a title and a time. With quick add
    ([#3](https://github.com/Rishicreates20/Nooki/pull/3), in review) you just type
    *"call mom tomorrow at 6pm"* and tap **Remind me**.
 4. **Watch the mood.** Nooki reacts to what's due. Tap it for a happy bounce.
-5. **When it rings,** pick **Complete** (+XP), **Snooze 5m** or **Dismiss** straight from the
-   notification.
+5. **When it rings,** tap **Complete** (+XP) or **Snooze 5m** on the notification, or swipe it
+   away to dismiss.
 
 </td>
 </tr>
@@ -95,8 +96,8 @@ Release signing, per-ABI APKs and sideloading troubleshooting are covered in
   Doze. If the Android 12+ exact-alarm permission is revoked, it falls back to
   `setAndAllowWhileIdle`. Alarms are restored after boot, package replace and time/time-zone
   changes.
-- **Actionable notifications.** Complete (+XP), Snooze 5m and Dismiss straight from the
-  notification.
+- **Actionable notifications.** Complete (+XP) or Snooze 5m straight from the notification;
+  swiping it away dismisses the reminder.
 - **XP and levels.** Completing reminders earns XP based on priority.
 - **Considered design.** Asymmetric card shapes, a mood badge whose `RoundedPolygon` shape morphs
   between moods, contextual color shifts, spring physics, and Fredoka + Plus Jakarta Sans
