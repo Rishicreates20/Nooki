@@ -171,4 +171,26 @@ class ExampleUnitTest {
         assertEquals(HappinessTier.FLUSTERED, flusteredMood.happinessTier)
         assertTrue(flusteredMood.happinessScore >= 35)
     }
+
+    @Test
+    fun petGesture_updatesMoodStateAndActivatesHappyParticles() {
+        val now = 1762260000000L
+        val baseline = MoodStateCalculator.compute(
+            allReminders = emptyList(),
+            nowMillis = now
+        )
+
+        val afterPlayBoop = MoodStateCalculator.compute(
+            allReminders = emptyList(),
+            nowMillis = now,
+            bonusPetTouches = 2,
+            bonusHappinessFromPlay = com.example.domain.model.PetGestureType.PLAY_BOOP.happinessBoost,
+            activePlayGesture = com.example.domain.model.PetGestureType.PLAY_BOOP,
+            resolvedPetMood = NookiPetMood.CELEBRATING_XP
+        )
+
+        assertTrue(afterPlayBoop.happinessScore > baseline.happinessScore)
+        assertTrue(afterPlayBoop.isHappyState)
+        assertEquals(com.example.domain.model.PetGestureType.PLAY_BOOP, afterPlayBoop.activePlayGesture)
+    }
 }

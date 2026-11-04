@@ -22,7 +22,7 @@ enum class NookiPetMood(
     IDLE_COZY(
         stateCode = "STATE_IDLE_COZY",
         displayTitle = "Cozy & Relaxed",
-        defaultSpeech = "Drag to rotate me in 3D, or tap a knot on my thread to untie it!",
+        defaultSpeech = "Tap to pat my head, double-tap to play, or rub my belly in 3D!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 1800
     ),
@@ -49,8 +49,8 @@ enum class NookiPetMood(
     ),
     CELEBRATING_XP(
         stateCode = "STATE_CELEBRATING_XP",
-        displayTitle = "Radiant & Energized!",
-        defaultSpeech = "Yay! Great job untying that knot! +XP care boost!",
+        displayTitle = "Happy & Glowing!",
+        defaultSpeech = "Yay! Great job! +XP & happy sparkles!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 460
     ),
@@ -65,8 +65,6 @@ enum class NookiPetMood(
 
 /**
  * Strongly-typed sealed state hierarchy representing Nooki's reactive state machine nodes.
- * Every emission from Room's `Flow<List<ReminderEntity>>` deterministically resolves to one
- * of these states alongside a calculated [MoodState].
  */
 sealed interface NookiPetState {
     val mood: NookiPetMood
@@ -124,7 +122,7 @@ sealed interface NookiPetState {
         val earnedXp: Int,
         val happinessScore: Int,
         override val speechText: String,
-        override val dbTriggerSummary: String = "Knot untied (+$earnedXp XP) • Happiness $happinessScore%"
+        override val dbTriggerSummary: String = "Happy state (+$earnedXp XP) • Happiness $happinessScore%"
     ) : NookiPetState {
         override val mood: NookiPetMood = NookiPetMood.CELEBRATING_XP
     }
@@ -132,7 +130,7 @@ sealed interface NookiPetState {
 
 /**
  * Combined output of [NookiStateMachine.reduceWithMood], pairing the discrete [NookiPetState]
- * node with the continuous completion-frequency [MoodState].
+ * node with the continuous completion-frequency & gesture-driven [MoodState].
  */
 data class NookiStateMachineOutput(
     val petState: NookiPetState,
@@ -141,7 +139,7 @@ data class NookiStateMachineOutput(
 
 /**
  * Pure, deterministic state machine reducer that evaluates Room database snapshots,
- * reminder completion frequency, and real-time clock ticks into a [NookiStateMachineOutput].
+ * reminder completion frequency, and petting/play gestures into a [NookiStateMachineOutput].
  */
 object NookiStateMachine {
 
@@ -153,7 +151,9 @@ object NookiStateMachine {
         celebratingUntilMillis: Long,
         celebrationSpeech: String?,
         lastEarnedXp: Int,
-        bonusPetTouches: Int = 0
+        bonusPetTouches: Int = 0,
+        bonusHappinessFromPlay: Int = 0,
+        activePlayGesture: PetGestureType? = null
     ): NookiStateMachineOutput {
         val ringingList = allReminders.filter { it.status == ReminderStatus.RINGING }
         val overdueList = allReminders.filter { item ->
@@ -164,10 +164,11 @@ object NookiStateMachine {
                 (item.status == ReminderStatus.MISSED || item.triggerAtMillis < nowMillis)
         }
 
-        // First determine preliminary pet mood so MoodStateCalculator can align its tier
+        val isCelebratingActive = nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank()
+
         val preliminaryMood = when {
             ringingList.isNotEmpty() -> NookiPetMood.EXCITED_RINGING
-            nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank() -> NookiPetMood.CELEBRATING_XP
+            isCelebratingActive -> NookiPetMood.CELEBRATING_XP
             overdueList.isNotEmpty() -> NookiPetMood.WORRIED_OVERDUE
             activeReminders.isNotEmpty() -> NookiPetMood.ATTENTIVE
             completedCount > 0 -> NookiPetMood.SLEEPING
@@ -178,6 +179,8 @@ object NookiStateMachine {
             allReminders = allReminders,
             nowMillis = nowMillis,
             bonusPetTouches = bonusPetTouches,
+            bonusHappinessFromPlay = bonusHappinessFromPlay,
+            activePlayGesture = if (isCelebratingActive) activePlayGesture else null,
             resolvedPetMood = preliminaryMood
         )
 
@@ -189,11 +192,11 @@ object NookiStateMachine {
                 )
             }
 
-            nowMillis < celebratingUntilMillis && !celebrationSpeech.isNullOrBlank() -> {
+            isCelebratingActive -> {
                 NookiPetState.CelebratingXp(
                     earnedXp = lastEarnedXp,
                     happinessScore = moodState.happinessScore,
-                    speechText = celebrationSpeech
+                    speechText = celebrationSpeech!!
                 )
             }
 

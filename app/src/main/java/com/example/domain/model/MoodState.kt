@@ -6,9 +6,33 @@ import java.util.Calendar
 import kotlin.math.roundToInt
 
 /**
- * High-level happiness tier derived from real reminder completion frequency and active load.
- * Follows Nooki's rule: "Mood comes from real data, never from random animation.
- * Levels and XP reward care for your own life. They never guilt anyone."
+ * Interactive touch gestures supported on the centered 3D Nooki model.
+ */
+enum class PetGestureType(
+    val displayLabel: String,
+    val happinessBoost: Int,
+    val xpReward: Int
+) {
+    HEAD_PAT(
+        displayLabel = "Head Pat",
+        happinessBoost = 3,
+        xpReward = 2
+    ),
+    PLAY_BOOP(
+        displayLabel = "Play Hop & Spin",
+        happinessBoost = 5,
+        xpReward = 5
+    ),
+    BELLY_SCRITCH(
+        displayLabel = "Cozy Rub",
+        happinessBoost = 4,
+        xpReward = 3
+    )
+}
+
+/**
+ * High-level happiness tier derived from real reminder completion frequency, active load,
+ * and tactile petting/play interactions.
  */
 enum class HappinessTier(
     val label: String,
@@ -50,7 +74,7 @@ enum class HappinessTier(
 
 /**
  * Immutable data class representing Nooki's real-time happiness and emotional state,
- * computed deterministically from Room reminder completion frequency and queue state.
+ * computed deterministically from Room reminder completion frequency and touch gestures.
  */
 data class MoodState(
     val happinessScore: Int = 75,
@@ -64,15 +88,27 @@ data class MoodState(
     val completionFrequencyPerDay: Float = 0f,
     val onTimeCompletionRatio: Float = 1f,
     val streakDays: Int = 0,
+    val petGestureCount: Int = 0,
+    val activePlayGesture: PetGestureType? = null,
     val careMessage: String = "Nooki is calm and watching your thread."
 ) {
     val happinessFraction: Float
         get() = (happinessScore.coerceIn(0, 100)) / 100f
+
+    /**
+     * True whenever Nooki is in a 'happy' state that emits celebratory/ambient 3D particles
+     * (hearts, golden sparkles, and leaf-green fireflies).
+     */
+    val isHappyState: Boolean
+        get() = petMood == NookiPetMood.CELEBRATING_XP ||
+            happinessTier == HappinessTier.RADIANT ||
+            (happinessTier == HappinessTier.CONTENT && happinessScore >= 72) ||
+            activePlayGesture != null
 }
 
 /**
- * Pure Kotlin calculator that derives [MoodState] from Room [ReminderEntity] records.
- * Zero Android framework imports so it can be unit-tested on the JVM.
+ * Pure Kotlin calculator that derives [MoodState] from Room [ReminderEntity] records
+ * and user petting/play interactions.
  */
 object MoodStateCalculator {
 
@@ -87,6 +123,8 @@ object MoodStateCalculator {
         allReminders: List<ReminderEntity>,
         nowMillis: Long = System.currentTimeMillis(),
         bonusPetTouches: Int = 0,
+        bonusHappinessFromPlay: Int = 0,
+        activePlayGesture: PetGestureType? = null,
         resolvedPetMood: NookiPetMood = NookiPetMood.IDLE_COZY
     ): MoodState {
         val completedItems = allReminders.filter { it.status == ReminderStatus.COMPLETED }
@@ -123,11 +161,9 @@ object MoodStateCalculator {
             ts >= cutoff7dMillis
         }
 
-        // Daily completion frequency over the last 7 days (weighted toward last 24h)
         val sevenDayAvg = completedLast7d / 7f
         val completionFrequencyPerDay = maxOf(completedLast24h.toFloat(), sevenDayAvg)
 
-        // Ratio of completed vs. missed items
         val totalActionable = completedItems.size + missedItems.size
         val onTimeRatio = if (totalActionable > 0) {
             completedItems.size.toFloat() / totalActionable.toFloat()
@@ -135,50 +171,57 @@ object MoodStateCalculator {
             1f
         }
 
-        // Consecutive day streak calculation
         val streakDays = computeConsecutiveStreakDays(completedItems, nowMillis)
 
-        // Happiness score formula driven by completion frequency:
+        // Happiness score formula driven by completion frequency + petting/play gestures:
         // - Base: 68
         // - +8 per reminder completed in the last 24h (up to +28)
         // - +3 per streak day (up to +12)
-        // - +2 per head-pat interaction (up to +8)
-        // - Gentle dip (-6 per missed item, capped at -24) when things pile up ("gets flustered when things pile up")
+        // - +touch/play happiness boost (up to +20)
+        // - Gentle dip (-6 per missed item, capped at -24) when things pile up
         val frequencyBoost = (completedLast24h * 8).coerceAtMost(28)
         val streakBoost = (streakDays * 3).coerceAtMost(12)
-        val touchBoost = (bonusPetTouches * 2).coerceAtMost(8)
+        val interactionBoost = (bonusPetTouches * 2 + bonusHappinessFromPlay).coerceAtMost(20)
         val pileUpLoad = (missedItems.size * 6).coerceAtMost(24)
 
-        val rawScore = BASE_HAPPINESS + frequencyBoost + streakBoost + touchBoost - pileUpLoad
+        val rawScore = BASE_HAPPINESS + frequencyBoost + streakBoost + interactionBoost - pileUpLoad
         val happinessScore = rawScore.coerceIn(MIN_GENTLE_HAPPINESS, 100)
 
         val tier = when {
-            missedItems.size >= 3 || resolvedPetMood == NookiPetMood.WORRIED_OVERDUE && missedItems.size >= 2 ->
+            activePlayGesture != null || resolvedPetMood == NookiPetMood.CELEBRATING_XP ->
+                if (happinessScore >= 80) HappinessTier.RADIANT else HappinessTier.CONTENT
+            missedItems.size >= 3 || (resolvedPetMood == NookiPetMood.WORRIED_OVERDUE && missedItems.size >= 2) ->
                 HappinessTier.FLUSTERED
             resolvedPetMood == NookiPetMood.SLEEPING ->
                 HappinessTier.SLEEPY_PEACEFUL
             happinessScore >= 85 || completedLast24h >= 3 ->
                 HappinessTier.RADIANT
-            happinessScore >= 70 || completedLast24h >= 1 ->
+            happinessScore >= 70 || completedLast24h >= 1 || bonusPetTouches >= 1 ->
                 HappinessTier.CONTENT
             else ->
                 HappinessTier.CALM
         }
 
-        val careMessage = when (tier) {
-            HappinessTier.RADIANT ->
-                "You've untied $completedLast24h knot(s) in the last 24h! Nooki is glowing with energy."
-            HappinessTier.CONTENT ->
+        val careMessage = when {
+            activePlayGesture == PetGestureType.PLAY_BOOP ->
+                "Wheee! Nooki loved that 3D play hop! (+${activePlayGesture.happinessBoost}% Happiness)"
+            activePlayGesture == PetGestureType.BELLY_SCRITCH ->
+                "Purr... Nooki is wagging happily from that cozy rub! (+${activePlayGesture.happinessBoost}% Happiness)"
+            activePlayGesture == PetGestureType.HEAD_PAT ->
+                "Nooki's ears perked up from your head pat! (+${activePlayGesture.happinessBoost}% Happiness)"
+            tier == HappinessTier.RADIANT ->
+                "You've untied $completedLast24h knot(s) in 24h! Nooki is glowing with happy particles."
+            tier == HappinessTier.CONTENT ->
                 if (completedToday > 0) {
-                    "$completedToday knot(s) untied today • Nooki feels warm and steady."
+                    "$completedToday knot(s) untied today • Nooki feels warm and happy."
                 } else {
                     "Nooki is content and keeping watch over your thread."
                 }
-            HappinessTier.SLEEPY_PEACEFUL ->
+            tier == HappinessTier.SLEEPY_PEACEFUL ->
                 "All tasks are done ($completedToday today). Nooki is resting peacefully."
-            HappinessTier.FLUSTERED ->
-                "${missedItems.size} items piled up in 'You missed' — untie one knot to help Nooki breathe easy."
-            HappinessTier.CALM ->
+            tier == HappinessTier.FLUSTERED ->
+                "${missedItems.size} items piled up in 'You missed' — untie one knot or pet Nooki!"
+            else ->
                 "Nooki is calm and ready whenever you need to remember something."
         }
 
@@ -194,6 +237,8 @@ object MoodStateCalculator {
             completionFrequencyPerDay = (completionFrequencyPerDay * 10f).roundToInt() / 10f,
             onTimeCompletionRatio = onTimeRatio,
             streakDays = streakDays,
+            petGestureCount = bonusPetTouches,
+            activePlayGesture = activePlayGesture,
             careMessage = careMessage
         )
     }

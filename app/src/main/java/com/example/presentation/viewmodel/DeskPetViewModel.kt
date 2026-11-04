@@ -11,6 +11,7 @@ import com.example.data.repository.ReminderRepository
 import com.example.domain.model.HappinessTier
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiStateMachine
+import com.example.domain.model.PetGestureType
 import com.example.domain.notice.NookiNoticeFilter
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
@@ -38,9 +39,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Reactive MVI ViewModel powered by Kotlin [StateFlow].
- * Expands the reactive state machine with [com.example.domain.model.MoodState] so Nooki's
- * happiness score, tier (`RADIANT`, `CONTENT`, `CALM`, `SLEEPY_PEACEFUL`, `FLUSTERED`),
- * and 3D posture respond dynamically to reminder completion frequency in Room.
+ * Manages Nooki's [com.example.domain.model.MoodState] from both Room reminder completion
+ * frequency and interactive 3D touch gestures (`HEAD_PAT`, `PLAY_BOOP`, `BELLY_SCRITCH`).
  */
 class DeskPetViewModel(
     private val repository: ReminderRepository,
@@ -55,6 +55,8 @@ class DeskPetViewModel(
         val lastEarnedXp: Int = 0,
         val petInteractionCombo: Int = 0,
         val bonusPetXp: Int = 0,
+        val bonusHappinessFromPlay: Int = 0,
+        val activePlayGesture: PetGestureType? = null,
         val isAutoRotate3DEnabled: Boolean = true,
         val noticeSettings: NoticeFilterSettings = NoticeFilterSettings(),
         val noticeSuggestions: List<NoticeInspectionResult.SafeSuggestion> = listOf(
@@ -105,7 +107,6 @@ class DeskPetViewModel(
         val now = local.nowMillis
         val ringing = allReminders.filter { it.status == ReminderStatus.RINGING }
 
-        // 1. "You missed" (Vermilion / Sindoor): MISSED status or past-due unacknowledged reminders
         val youMissed = allReminders.filter { item ->
             item.status != ReminderStatus.COMPLETED &&
                 item.status != ReminderStatus.CANCELLED &&
@@ -114,7 +115,6 @@ class DeskPetViewModel(
                 (item.status == ReminderStatus.MISSED || item.triggerAtMillis < now)
         }
 
-        // 2. "What did I forget? & Nooki holds for you" (Marigold)
         val youForgotAndHeld = allReminders.filter { item ->
             item.status != ReminderStatus.COMPLETED &&
                 item.status != ReminderStatus.CANCELLED &&
@@ -123,7 +123,6 @@ class DeskPetViewModel(
                 (isHeldOrMoneyNote(item) || item.snoozeCount >= 2 || item.notes.contains("WARNS:"))
         }
 
-        // Running money totals
         var owedToYouTotal = 0
         var youOweTotal = 0
         for (item in allReminders) {
@@ -139,7 +138,6 @@ class DeskPetViewModel(
             }
         }
 
-        // 3. "Today & coming up" (Neel Indigo)
         val todayAndComingUp = allReminders.filter { item ->
             item.status != ReminderStatus.COMPLETED &&
                 item.status != ReminderStatus.CANCELLED &&
@@ -148,10 +146,8 @@ class DeskPetViewModel(
                 item !in youForgotAndHeld
         }
 
-        // Done / Untied knots (Leaf Green)
         val doneKnots = allReminders.filter { it.status == ReminderStatus.COMPLETED }
 
-        // Evaluate both the discrete NookiPetState and the completion-frequency MoodState
         val machineOutput = NookiStateMachine.reduceWithMood(
             allReminders = allReminders,
             activeReminders = todayAndComingUp,
@@ -160,12 +156,13 @@ class DeskPetViewModel(
             celebratingUntilMillis = local.celebratingUntilMillis,
             celebrationSpeech = local.celebrationSpeech,
             lastEarnedXp = local.lastEarnedXp,
-            bonusPetTouches = local.petInteractionCombo
+            bonusPetTouches = local.petInteractionCombo,
+            bonusHappinessFromPlay = local.bonusHappinessFromPlay,
+            activePlayGesture = local.activePlayGesture
         )
         val resolvedPetState = machineOutput.petState
         val resolvedMoodState = machineOutput.moodState
 
-        // Live parse of current one-breath input
         val liveParsed = NookiBreathParser.parse(
             rawInput = local.breathInputText,
             nowMillis = now,
@@ -245,27 +242,11 @@ class DeskPetViewModel(
     fun onIntent(intent: DeskIntent) {
         when (intent) {
             DeskIntent.PetNookiHead -> {
-                val now = System.currentTimeMillis()
-                val reactions = listOf(
-                    "Tap any knot on my thread to untie it when you're done!",
-                    "Tell me anything in English, Hinglish, or हिंदी — I'll tie a knot for you!",
-                    "I'm watching what you missed, what you forgot, and what's on today!",
-                    "Boop! Every knot you untie boosts my happiness and your XP!"
-                )
-                ephemeralState.update { state ->
-                    val nextCombo = state.petInteractionCombo + 1
-                    state.copy(
-                        nowMillis = now,
-                        celebratingUntilMillis = now + 3_200L,
-                        celebrationSpeech = reactions[nextCombo % reactions.size],
-                        lastEarnedXp = 2,
-                        petInteractionCombo = nextCombo,
-                        bonusPetXp = state.bonusPetXp + 2
-                    )
-                }
-                viewModelScope.launch {
-                    _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
-                }
+                handlePetGesture(PetGestureType.HEAD_PAT)
+            }
+
+            is DeskIntent.TriggerPetGesture -> {
+                handlePetGesture(intent.gesture)
             }
 
             DeskIntent.ToggleAutoRotate3D -> {
@@ -453,9 +434,10 @@ class DeskPetViewModel(
                     val now = System.currentTimeMillis()
                     ephemeralState.update {
                         it.copy(
-                            celebratingUntilMillis = now + 3_500L,
+                            celebratingUntilMillis = now + 3_800L,
                             celebrationSpeech = "Knot untied! '${intent.reminder.title}' is done! +${intent.reminder.petMoodImpact} XP & +8% Happiness!",
-                            lastEarnedXp = intent.reminder.petMoodImpact
+                            lastEarnedXp = intent.reminder.petMoodImpact,
+                            activePlayGesture = PetGestureType.PLAY_BOOP
                         )
                     }
                     _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
@@ -525,6 +507,47 @@ class DeskPetViewModel(
                     _sideEffects.send(DeskSideEffect.ShowMessage("Cleared untied knots."))
                 }
             }
+        }
+    }
+
+    private fun handlePetGesture(gesture: PetGestureType) {
+        val now = System.currentTimeMillis()
+        val speech = when (gesture) {
+            PetGestureType.HEAD_PAT -> {
+                val lines = listOf(
+                    "Purr! That head pat gave me +${gesture.happinessBoost}% Happiness & +${gesture.xpReward} XP!",
+                    "Hehe! My ears perked right up! Double-tap me for a 3D play hop!",
+                    "Tap any knot on my thread to untie it when you're done!"
+                )
+                lines[(ephemeralState.value.petInteractionCombo) % lines.size]
+            }
+            PetGestureType.PLAY_BOOP ->
+                "Wheee! 3D Play Spin! +${gesture.happinessBoost}% Happiness & +${gesture.xpReward} XP!"
+            PetGestureType.BELLY_SCRITCH ->
+                "Cozy belly scritches! My tail can't stop wagging! +${gesture.happinessBoost}% Happiness!"
+        }
+
+        ephemeralState.update { state ->
+            val nextCombo = state.petInteractionCombo + 1
+            state.copy(
+                nowMillis = now,
+                celebratingUntilMillis = now + 3_500L,
+                celebrationSpeech = speech,
+                lastEarnedXp = gesture.xpReward,
+                petInteractionCombo = nextCombo,
+                bonusPetXp = state.bonusPetXp + gesture.xpReward,
+                bonusHappinessFromPlay = (state.bonusHappinessFromPlay + gesture.happinessBoost).coerceAtMost(24),
+                activePlayGesture = gesture
+            )
+        }
+
+        NookiSchedulerTelemetry.record(
+            source = "3DGestureEngine",
+            message = "Triggered ${gesture.name} (${gesture.displayLabel}) -> +${gesture.happinessBoost}% MoodState Happiness, +${gesture.xpReward} XP"
+        )
+
+        viewModelScope.launch {
+            _sideEffects.send(DeskSideEffect.TriggerHapticPulse)
         }
     }
 

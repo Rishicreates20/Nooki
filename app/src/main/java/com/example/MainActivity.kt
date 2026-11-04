@@ -430,7 +430,7 @@ private fun NookiThreadHomeScreen(
             }
         }
 
-        // 2. Centered 3D Nooki Fox Companion
+        // 2. Centered 3D Nooki Fox Companion (with Happy State 3D Particles & Touch Gestures)
         item {
             Box(
                 modifier = Modifier
@@ -440,10 +440,12 @@ private fun NookiThreadHomeScreen(
             ) {
                 Nooki3DCenterpiece(
                     mood = uiState.petMood,
+                    moodState = uiState.moodState,
                     speechText = uiState.speechBubbleText,
                     isAutoRotateEnabled = uiState.isAutoRotate3DEnabled,
                     petCombo = uiState.petInteractionCombo,
                     onPetTap = { onIntent(DeskIntent.PetNookiHead) },
+                    onPetGesture = { gesture -> onIntent(DeskIntent.TriggerPetGesture(gesture)) },
                     onToggleAutoRotate = { onIntent(DeskIntent.ToggleAutoRotate3D) }
                 )
             }

@@ -6,6 +6,7 @@ import com.example.data.local.entity.ReminderPriority
 import com.example.domain.model.MoodState
 import com.example.domain.model.NookiPetMood
 import com.example.domain.model.NookiPetState
+import com.example.domain.model.PetGestureType
 import com.example.domain.notice.NoticeFilterSettings
 import com.example.domain.notice.NoticeInspectionResult
 import com.example.domain.notice.NoticeSourceKind
@@ -15,7 +16,8 @@ import com.example.scheduler.SchedulerDiagnosticEntry
 
 /**
  * Immutable UI State emitted by [com.example.presentation.viewmodel.DeskPetViewModel]'s
- * [kotlinx.coroutines.flow.StateFlow], including [moodState] computed from reminder completion frequency.
+ * [kotlinx.coroutines.flow.StateFlow], including [moodState] computed from reminder completion
+ * frequency and 3D petting/play gestures.
  */
 data class DeskUiState(
     val petState: NookiPetState = NookiPetState.IdleCozy(),
@@ -69,6 +71,7 @@ data class DeskUiState(
  */
 sealed interface DeskIntent {
     data object PetNookiHead : DeskIntent
+    data class TriggerPetGesture(val gesture: PetGestureType) : DeskIntent
     data object ToggleAutoRotate3D : DeskIntent
     data class UpdateBreathInput(val text: String) : DeskIntent
     data object SaveBreathInput : DeskIntent
