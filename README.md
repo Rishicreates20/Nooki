@@ -32,10 +32,12 @@ through exact alarms, and they survive reboots, time-zone changes and app update
   four mood animations, a spring squash-and-stretch with haptics when you tap it, and a lean that
   follows your phone's tilt via the gravity sensor.
 - **Moods driven by your schedule.** `PetMoodResolver` derives Nooki's state from the reminders
-  stored in Room, so the pet, the card colors and the mood badge always agree.
-- **Exact, reliable alarms.** Uses `AlarmManager.setExactAndAllowWhileIdle`, falls back gracefully
-  when Android 12+ exact-alarm permission is revoked, and recovers on boot, package replace and
-  time/time-zone changes.
+  stored in Room, and that state drives the pet, the card colors and the mood badge. Tapping the
+  pet briefly plays a Happy reaction on top of the current mood.
+- **Exact, reliable alarms.** Uses `AlarmManager.setAlarmClock`, which wakes the device through
+  Doze. If the Android 12+ exact-alarm permission is revoked, it falls back to
+  `setAndAllowWhileIdle`. Alarms are restored after boot, package replace and time/time-zone
+  changes.
 - **Actionable notifications.** Complete (+XP), Snooze 5m and Dismiss straight from the
   notification.
 - **XP and levels.** Completing reminders earns XP based on priority.
@@ -50,7 +52,7 @@ through exact alarms, and they survive reboots, time-zone changes and app update
 | --- | --- |
 | Language / UI | Kotlin 2.2, Jetpack Compose, Material 3 |
 | Persistence | Room (KSP) with reactive `Flow`s, the single source of truth |
-| Scheduling | `AlarmManager` exact alarms, `BroadcastReceiver`s with `goAsync()` |
+| Scheduling | `AlarmManager.setAlarmClock` with an inexact fallback, `BroadcastReceiver`s with `goAsync()` |
 | 3D | SceneView 2.3 on Google Filament + gltfio |
 | Shapes | `androidx.graphics:graphics-shapes` (`RoundedPolygon`, `Morph`) |
 | Build | AGP 9, Gradle 9.3, R8 + resource shrinking, optional ABI splits |
@@ -77,7 +79,7 @@ Room (ReminderDao) ──Flow──▶ ReminderRepository ──▶ Compose UI (
 
 ### Download a build
 
-Every push builds APKs on GitHub. Open the latest successful
+Every push to `main` (and every pull request) builds APKs on GitHub. Open the latest successful
 [Build APK run](https://github.com/Rishicreates20/Nooki/actions/workflows/android-apk.yml),
 download the `nooki-apk-…` artifact, unzip it on your phone and open `app-debug.apk`.
 
