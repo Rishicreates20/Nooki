@@ -35,7 +35,7 @@ android {
   // still get an installable APK, and prints a warning. Never ship a debug-signed APK to a store.
   //
   // Debug: uses `debug.keystore` in the project root when present (AI Studio provides one),
-  // otherwise Android Studio's standard ~/.android/debug.keystore, so a fresh clone builds.
+  // otherwise AGP's standard debug key (auto-created), so a fresh clone or CI runner builds.
   // ---------------------------------------------------------------------------------------------
   val keystoreProps =
     Properties().apply {
@@ -58,16 +58,18 @@ android {
       keyAlias = signingValue("KEY_ALIAS", "keyAlias") ?: "upload"
       keyPassword = releaseKeyPassword
     }
-    create("debugConfig") {
-      val projectDebugKeystore = rootProject.file("debug.keystore")
-      storeFile =
-        if (projectDebugKeystore.isFile) projectDebugKeystore
-        else File(System.getProperty("user.home"), ".android/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    // Only defined when the project ships its own debug.keystore (AI Studio). Otherwise the
+    // built-in "debug" config is used, which AGP creates at ~/.android/debug.keystore on demand.
+    if (rootProject.file("debug.keystore").isFile) {
+      create("debugConfig") {
+        storeFile = rootProject.file("debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
+  val debugSigning = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")
 
   buildTypes {
     release {
@@ -85,11 +87,11 @@ android {
             "Nooki: no release keystore found (env vars or keystore.properties). " +
               "Release APK will be signed with the DEBUG key - fine for sideloading, not for Play."
           )
-          signingConfigs.getByName("debugConfig")
+          debugSigning
         }
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      signingConfig = debugSigning
     }
   }
 

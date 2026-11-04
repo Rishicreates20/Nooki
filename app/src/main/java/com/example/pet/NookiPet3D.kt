@@ -12,9 +12,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,12 +40,12 @@ import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
 import io.github.sceneview.node.ModelNode
+import io.github.sceneview.node.Node
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberEnvironment
 import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberModelLoader
-import io.github.sceneview.rememberNodes
 import io.github.sceneview.rememberOnGestureListener
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -123,7 +125,9 @@ fun NookiPet3D(
         return
     }
 
-    val childNodes = rememberNodes { add(modelNode) }
+    // Keyed on the node so a new modelAssetPath swaps what the Scene renders; the old node is freed.
+    val childNodes = remember(modelNode) { mutableStateListOf<Node>(modelNode) }
+    DisposableEffect(modelNode) { onDispose { modelNode.destroy() } }
     val cameraNode = rememberCameraNode(engine) {
         position = Position(x = 0f, y = 0.02f, z = 1.75f)
     }
