@@ -449,7 +449,7 @@ fun PendingScreen(
         item {
             ScreenHeader(
                 title = "Pending",
-                subtitle = "Everything still to do. Tap the knot on the left when it's done."
+                subtitle = "Everything still to do. Tap the circle on the left when it's done."
             )
             Spacer(Modifier.height(10.dp))
             SectionCard {

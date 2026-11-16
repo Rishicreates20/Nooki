@@ -268,7 +268,7 @@ internal fun OneBreathCaptureSection(
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Tie knot", fontWeight = FontWeight.Bold)
+                            Text("Add", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -359,7 +359,7 @@ internal fun SolidRingingBlock(
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Untie knot (Done)", fontWeight = FontWeight.Bold)
+                    Text("Mark done", fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
                     onClick = onAskLater,
@@ -486,7 +486,7 @@ internal fun ThreadKnotRow(
 
     val timeLabel = remember(reminder.triggerAtMillis, nowMillis, isDone, isHeldMemory, isMoneyOrLent) {
         when {
-            isDone -> "Untied"
+            isDone -> "Done"
             isHeldMemory -> "Saved in Nooki's memory"
             isMoneyOrLent -> "Held until settled"
             reminder.status == ReminderStatus.MISSED -> {
@@ -612,7 +612,7 @@ internal fun ThreadKnotRow(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Tap knot to untie",
+                        text = "Tap the circle when done",
                         style = MaterialTheme.typography.labelLarge,
                         color = LeafGreen,
                         modifier = Modifier.clickable { onTapKnotToUntie() }
@@ -712,7 +712,7 @@ internal fun ThreadSuggestionNode(
                 }
                 Row {
                     TextButton(onClick = onAccept) {
-                        Text("Tie knot", color = LeafGreen, fontWeight = FontWeight.Bold)
+                        Text("Add", color = LeafGreen, fontWeight = FontWeight.Bold)
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(

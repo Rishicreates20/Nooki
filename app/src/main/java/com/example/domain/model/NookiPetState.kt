@@ -22,7 +22,7 @@ enum class NookiPetMood(
     IDLE_COZY(
         stateCode = "STATE_IDLE_COZY",
         displayTitle = "Cozy & Relaxed",
-        defaultSpeech = "Tap to pat my head, double-tap to play, or rub my belly in 3D!",
+        defaultSpeech = "Tap to pat me, double-tap to play!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 1800
     ),
@@ -43,14 +43,14 @@ enum class NookiPetMood(
     WORRIED_OVERDUE(
         stateCode = "STATE_FLUSTERED_MISSED",
         displayTitle = "Flustered (You Missed Items)",
-        defaultSpeech = "A few things piled up in 'You missed' — let's untie a knot together!",
+        defaultSpeech = "A few things were missed. Let's finish one together!",
         primaryAuraColor = NookiAmberLight,
         breathingSpeedMs = 860
     ),
     CELEBRATING_XP(
         stateCode = "STATE_CELEBRATING_XP",
         displayTitle = "Happy & Glowing!",
-        defaultSpeech = "Yay! Great job! +XP & happy sparkles!",
+        defaultSpeech = "Yay! Great job!",
         primaryAuraColor = NookiMintSuccess,
         breathingSpeedMs = 460
     ),

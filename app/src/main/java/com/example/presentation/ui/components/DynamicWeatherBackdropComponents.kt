@@ -378,6 +378,7 @@ private fun abs(value: Float): Float = if (value < 0f) -value else value
  * Shows the live Location API weather status, how it affects Nooki's 3D desk island,
  * a button to sync GPS coordinates via the Android Location API, and quick environment chips.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun LocalWeatherEnvironmentBar(
     weatherState: LocalWeatherState,
@@ -431,15 +432,9 @@ fun LocalWeatherEnvironmentBar(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.testTag("weather_condition_headline")
                             )
-                            Text(
-                                text = "(+${condition.moodHappinessBonus}% Mood)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = weatherTint,
-                                fontWeight = FontWeight.SemiBold
-                            )
                         }
                         Text(
-                            text = "${weatherState.sourceBadgeText} • ${weatherState.humidityPercent}% RH • ${weatherState.windSpeedKmh} km/h",
+                            text = "Sets the sky behind Nooki",
                             style = MaterialTheme.typography.labelSmall,
                             color = scheme.onSurface.copy(alpha = 0.78f),
                             maxLines = 1,
@@ -456,9 +451,9 @@ fun LocalWeatherEnvironmentBar(
                     label = {
                         Text(
                             text = if (weatherState.isFromLiveLocationApi && !weatherState.isManualOverride) {
-                                "GPS Synced"
+                                "Using location"
                             } else {
-                                "Sync GPS"
+                                "Use location"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold
@@ -484,27 +479,15 @@ fun LocalWeatherEnvironmentBar(
                 )
             }
 
-            // Environment effect summary on Nooki's 3D Desk Island
-            Text(
-                text = "3D Island Environment: ${condition.environmentDescription}",
-                style = MaterialTheme.typography.bodySmall,
-                color = weatherTint.copy(alpha = 0.95f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
             // Quick Weather Environment Switcher (Auto GPS + 5 Weather Atmospheres)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 FilterChip(
                     selected = !weatherState.isManualOverride,
                     onClick = { onSelectWeatherCondition(null) },
-                    label = { Text("📍 Auto GPS") },
+                    label = { Text("📍 Auto") },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = weatherTint,
                         selectedLabelColor = scheme.background

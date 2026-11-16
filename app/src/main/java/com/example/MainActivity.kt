@@ -343,6 +343,7 @@ fun NookiMainApp(
                                 runCatching { context.startActivity(intent) }
                             }
                         },
+                        onBack = { showNotices = false },
                         onIntent = viewModel::onIntent
                     )
                 } else {

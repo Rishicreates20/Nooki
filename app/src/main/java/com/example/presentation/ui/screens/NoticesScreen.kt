@@ -154,92 +154,120 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Second tab:
- * - Explains clearly what Nooki reads and why before asking for access
- * - Lets the user turn off each kind of noticing ("off means off")
- * - Proves the OTP / Password / Bank Balance Dropper live
- * - Preserves the Milestone 1 & 2 Room + Exact Alarm + Boot Recovery diagnostics
+ * Profile > Privacy & reminders. Plain-language privacy, what Nooki may notice, whether alarms can
+ * ring on time, and (folded away) testing tools.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NookiNoticesAndReliabilityScreen(
     uiState: DeskUiState,
     onOpenExactAlarmSettings: () -> Unit,
+    onBack: () -> Unit,
     onIntent: (DeskIntent) -> Unit
 ) {
+    var showTestingTools by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .widthIn(max = 620.dp),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .widthIn(max = 620.dp)
+            .testTag("screen_notices"),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Plain-language Privacy Disclosure & Individual Noticing Toggles
         item {
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = NeelIndigo),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+            TextButton(onClick = onBack, modifier = Modifier.testTag("notices_back")) {
+                Text("‹ Back to Profile")
+            }
+            ScreenHeader(
+                title = "Privacy & reminders",
+                subtitle = "What Nooki can see, and whether reminders can ring on time"
+            )
+        }
+
+        item {
+            SectionCard(title = "Your privacy") {
+                Text(
+                    text = "• Nothing leaves your phone. Nooki has no internet access.\n" +
+                        "• Message text is never saved, only who and when.\n" +
+                        "• OTPs, passwords, PINs and bank balances are thrown away straight away.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                )
+                Text(
+                    text = "Nooki may suggest reminders from:",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = null,
-                            tint = LeafGreen
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "How Nooki notices (100% on your phone)",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = WashedCotton
+                    NoticeSourceKind.entries.forEach { kind ->
+                        val enabled = uiState.noticeSettings.isAllowed(kind)
+                        FilterChip(
+                            selected = enabled,
+                            onClick = { onIntent(DeskIntent.ToggleNoticeKind(kind)) },
+                            label = { Text(kind.displayLabel) },
+                            leadingIcon = if (enabled) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            } else null
                         )
                     }
+                }
+                Text(
+                    text = "Tap one to turn it off. Off means off.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        item {
+            SectionCard(title = "Reminders") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AlarmOn,
+                        contentDescription = null,
+                        tint = if (uiState.canScheduleExactAlarms) LeafGreen else Marigold
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        text = "• Nooki has NO internet permission. Nothing ever leaves your phone.\n" +
-                            "• Nooki never stores message text — only who messaged or called and when.\n" +
-                            "• OTPs, passwords, PINs, and bank balances are dropped immediately before anything is saved.\n" +
-                            "• Turn off any kind of noticing below — 'off' means off.",
+                        text = if (uiState.canScheduleExactAlarms) {
+                            "Medicine and important reminders will ring on time."
+                        } else {
+                            "Allow \"Alarms & reminders\" so medicine reminders ring on time."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = WashedCotton.copy(alpha = 0.85f)
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
                     )
+                }
+                if (!uiState.canScheduleExactAlarms) {
+                    Button(onClick = onOpenExactAlarmSettings) { Text("Allow") }
+                }
+                OutlinedButton(
+                    onClick = { onIntent(DeskIntent.Schedule5SecondTestAlarm) },
+                    modifier = Modifier.testTag("btn_5s_test_alarm")
+                ) { Text("Send me a test reminder") }
+            }
+        }
 
+        item {
+            TextButton(
+                onClick = { showTestingTools = !showTestingTools },
+                modifier = Modifier.testTag("toggle_testing_tools")
+            ) {
+                Text(if (showTestingTools) "Hide testing tools" else "Show testing tools")
+            }
+        }
+
+        if (showTestingTools) {
+            item {
+                SectionCard(title = "Testing tools") {
                     FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        NoticeSourceKind.entries.forEach { kind ->
-                            val enabled = uiState.noticeSettings.isAllowed(kind)
-                            FilterChip(
-                                selected = enabled,
-                                onClick = { onIntent(DeskIntent.ToggleNoticeKind(kind)) },
-                                label = { Text(kind.displayLabel) },
-                                leadingIcon = if (enabled) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                } else null
-                            )
-                        }
-                    }
-
-                    // Live OTP & Privacy Filter Verification Buttons
-                    Text(
-                        text = "Test Nooki's Privacy Filter:",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Marigold
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         OutlinedButton(
                             onClick = {
@@ -251,13 +279,9 @@ internal fun NookiNoticesAndReliabilityScreen(
                                     )
                                 )
                             },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("test_otp_drop_button")
-                        ) {
-                            Text("Simulate OTP SMS", color = Sindoor)
-                        }
-                        FilledTonalButton(
+                            modifier = Modifier.testTag("test_otp_drop_button")
+                        ) { Text("Fake OTP message") }
+                        OutlinedButton(
                             onClick = {
                                 onIntent(
                                     DeskIntent.SimulateIncomingNotification(
@@ -267,156 +291,32 @@ internal fun NookiNoticesAndReliabilityScreen(
                                     )
                                 )
                             },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("test_missed_call_button")
-                        ) {
-                            Text("Simulate Missed Call")
-                        }
-                    }
-
-                    if (uiState.lastDroppedNoticeAudit != null) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = NightIndigo,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = uiState.lastDroppedNoticeAudit,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = LeafGreen,
-                                modifier = Modifier.padding(10.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Reliability & Reboot Survival Lab (Pre-built Milestone 1 & 2 Controls)
-        item {
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = NeelIndigo),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.VerifiedUser,
-                            contentDescription = null,
-                            tint = Marigold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Reliability, Exact Medicine Alarms & Reboot Check",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = WashedCotton
-                        )
-                    }
-                    Text(
-                        text = "StateFlow: ${uiState.stateTransitionSummary}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Marigold
-                    )
-                    Text(
-                        text = "Exact alarms are used only for medicine or critical items. Standard reminders use battery-friendly batch alarms.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = WashedCotton.copy(alpha = 0.8f)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { onIntent(DeskIntent.Schedule5SecondTestAlarm) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Marigold,
-                                contentColor = NightIndigo
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("btn_5s_test_alarm")
-                        ) {
-                            Icon(Icons.Default.AlarmOn, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("+5s Medicine Test", fontWeight = FontWeight.Bold)
-                        }
-                        FilledTonalButton(
+                            modifier = Modifier.testTag("test_missed_call_button")
+                        ) { Text("Fake missed call") }
+                        OutlinedButton(
                             onClick = { onIntent(DeskIntent.SimulateBootRecovery) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("btn_simulate_boot")
-                        ) {
-                            Icon(Icons.Default.RestartAlt, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reboot Check")
-                        }
+                            modifier = Modifier.testTag("btn_simulate_boot")
+                        ) { Text("Restart check") }
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Critical Exact Alarms: ${if (uiState.canScheduleExactAlarms) "Ready" else "Tap to allow"}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (uiState.canScheduleExactAlarms) LeafGreen else Marigold,
-                            modifier = Modifier.clickable {
-                                if (!uiState.canScheduleExactAlarms) onOpenExactAlarmSettings()
-                            }
-                        )
-                        TextButton(onClick = { onIntent(DeskIntent.ClearCompleted) }) {
-                            Text("Clear Done (${uiState.doneKnots.size})", color = WashedCotton)
-                        }
+                    uiState.lastDroppedNoticeAudit?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = LeafGreen)
                     }
-                }
-            }
-        }
-
-        item {
-            Text(
-                text = "Real-time Measurements & Telemetry (${uiState.telemetryLogs.size})",
-                style = MaterialTheme.typography.titleMedium,
-                color = WashedCotton
-            )
-        }
-
-        items(uiState.telemetryLogs, key = { it.id }) { entry ->
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = NeelIndigo,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = entry.source,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (entry.isWarning) Sindoor else Marigold
-                        )
-                        Text(
-                            text = entry.formattedTime(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = WashedCotton.copy(alpha = 0.65f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = entry.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = WashedCotton
+                        text = "Log (${uiState.telemetryLogs.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    uiState.telemetryLogs.take(30).forEach { entry ->
+                        Text(
+                            text = "${entry.formattedTime()}  ${entry.source}: ${entry.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (entry.isWarning) Sindoor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
         }
+
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }
