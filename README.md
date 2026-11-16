@@ -75,6 +75,17 @@ Room (ReminderDao) ──Flow──▶ ReminderRepository ──▶ Compose UI (
 - `ui/`: theme, typography and reusable components.
 - `tools/`: stdlib-only Python scripts that generate the 3D model and the launcher icon.
 
+## Accounts and app layout
+
+- **Log in / sign up.** Accounts live only on the phone (no internet, no cloud). Passwords are stored as salted PBKDF2 hashes. Each account gets its own database file, so people sharing a phone never see each other's reminders or health logs. The first account created adopts the data that was already on the phone.
+- **Only the signed-in account's alarms ring.** Logging out pauses that account's alarms; logging back in restores them.
+- **Five tabs** in the bottom bar:
+  - **Home**: greeting, Nooki, "Add something", today's tiles (Pending, Steps completed, Walking, Water), what's missed and what's next.
+  - **Pending**: everything still to do, grouped into Missed, Held for you, and Today & coming up.
+  - **Done**: completed steps by day, today's count against your daily goal, and the streak. Anything can be moved back to Pending.
+  - **Health**: steps (phone's built-in step sensor, or add by hand), water, sleep, mood, and today's medicines, with a 7-day steps chart.
+  - **Profile**: account, editable Nooki profile, settings (notices and alarm reliability, theme, weather), the journal, and log out.
+
 ## Get the app
 
 ### Download a build

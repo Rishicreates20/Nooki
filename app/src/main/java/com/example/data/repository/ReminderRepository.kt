@@ -88,6 +88,9 @@ interface ReminderRepository {
         lastCompletedDayEpoch: Long
     )
     suspend fun seedStarterRemindersIfEmpty()
+
+    /** Cancels every pending AlarmManager alarm for this database (used when the user logs out). */
+    suspend fun cancelAllScheduledAlarms(): Int
 }
 
 /**
@@ -368,6 +371,12 @@ class ReminderRepositoryImpl(
         return movedCount
     }
 
+    override suspend fun cancelAllScheduledAlarms(): Int {
+        val pending = reminderDao.getPendingRemindersForBootRecovery()
+        pending.forEach { alarmScheduler.cancel(it.id) }
+        return pending.size
+    }
+
     override suspend fun reconcileAndRescheduleAlarms(nowMillis: Long): BootRecoveryReport {
         val pending = reminderDao.getPendingRemindersForBootRecovery()
         var rescheduled = 0
@@ -495,7 +504,10 @@ class ReminderRepositoryImpl(
 
     override suspend fun seedStarterRemindersIfEmpty() {
         val now = System.currentTimeMillis()
-        if (reminderDao.getUserProfile() == null) {
+        // Accounts created through sign-up get their profile written at sign-up time, so they start
+        // with a clean, empty thread. Demo data is only seeded for a brand-new pre-account install.
+        if (reminderDao.getUserProfile() != null) return
+        run {
             val yesterdayEpoch = ConsistencyStreakCalculator.toLocalDayEpoch(now - 86_400_000L)
             reminderDao.upsertUserProfile(
                 UserProfileEntity(
