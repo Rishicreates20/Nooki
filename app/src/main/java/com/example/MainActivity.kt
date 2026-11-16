@@ -383,6 +383,11 @@ fun NookiMainApp(
                             onChangeWater = healthViewModel::changeWater,
                             onSetSleepMinutes = healthViewModel::setSleepMinutes,
                             onSetMood = healthViewModel::setMood,
+                            onStartWorkout = healthViewModel::startWorkout,
+                            onFinishWorkout = healthViewModel::finishWorkout,
+                            onCancelWorkout = healthViewModel::cancelWorkout,
+                            onLogWorkout = healthViewModel::logWorkout,
+                            onDeleteWorkout = healthViewModel::deleteWorkout,
                             onIntent = viewModel::onIntent
                         )
 

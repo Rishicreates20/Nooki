@@ -51,3 +51,43 @@ class StepTallyTest {
         assertEquals("Not logged", HealthFormat.sleep(0))
     }
 }
+
+class WorkoutMathTest {
+
+    @Test
+    fun `calories use MET times weight times hours`() {
+        // Run: 9.8 MET x 65 kg x 0.5 h = 318.5 -> 319 (rounded half up)
+        org.junit.Assert.assertEquals(
+            319,
+            com.example.domain.health.WorkoutMath.estimateCalories(com.example.domain.health.WorkoutType.RUN, 30)
+        )
+        org.junit.Assert.assertEquals(
+            0,
+            com.example.domain.health.WorkoutMath.estimateCalories(com.example.domain.health.WorkoutType.WALK, 0)
+        )
+    }
+
+    @Test
+    fun `elapsed minutes round and stay in range`() {
+        val m = com.example.domain.health.WorkoutMath
+        org.junit.Assert.assertEquals(1, m.elapsedMinutes(0L, 10_000L))
+        org.junit.Assert.assertEquals(25, m.elapsedMinutes(0L, 25 * 60_000L + 20_000L))
+        org.junit.Assert.assertEquals(360, m.elapsedMinutes(0L, 10 * 3_600_000L))
+    }
+
+    @Test
+    fun `timer text`() {
+        val m = com.example.domain.health.WorkoutMath
+        org.junit.Assert.assertEquals("00:05", m.formatTimer(5_000L))
+        org.junit.Assert.assertEquals("12:34", m.formatTimer((12 * 60 + 34) * 1000L))
+        org.junit.Assert.assertEquals("1:02:03", m.formatTimer((3600 + 2 * 60 + 3) * 1000L))
+    }
+
+    @Test
+    fun `unknown workout names fall back to Other`() {
+        org.junit.Assert.assertEquals(
+            com.example.domain.health.WorkoutType.OTHER,
+            com.example.domain.health.WorkoutType.fromName("PARKOUR")
+        )
+    }
+}

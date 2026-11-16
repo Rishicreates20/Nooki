@@ -8,6 +8,8 @@ import com.example.data.local.database.AppDatabase
 import com.example.data.local.entity.HealthDayLogEntity
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderStatus
+import com.example.data.local.entity.WorkoutEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -48,7 +50,7 @@ class HealthMigrationTest {
             .build()
 
     @Test
-    fun `migration 4 to 5 keeps reminders and adds health logs`() = runBlocking {
+    fun `migration 4 to 5 keeps reminders and adds health logs and workouts`() = runBlocking {
         // 1. A database with one reminder in it.
         open().also { db ->
             db.reminderDao().upsertReminder(
@@ -61,6 +63,7 @@ class HealthMigrationTest {
         SQLiteDatabase.openDatabase(context.getDatabasePath(dbName).path, null, SQLiteDatabase.OPEN_READWRITE)
             .use { raw ->
                 raw.execSQL("DROP TABLE IF EXISTS `health_day_logs`")
+                raw.execSQL("DROP TABLE IF EXISTS `workouts`")
                 raw.version = 4
             }
 
@@ -75,6 +78,12 @@ class HealthMigrationTest {
             assertNotNull(log)
             assertEquals(4_321, log!!.steps)
             assertEquals(-1L, log.lastStepCounterValue)
+
+            migrated.healthDao().insertWorkout(
+                WorkoutEntity(dayEpoch = 20_000L, type = "RUN", durationMinutes = 30, calories = 318, startedAtMillis = 5L)
+            )
+            val workouts = migrated.healthDao().observeWorkoutsFrom(19_999L).first()
+            assertEquals(listOf(30), workouts.map { it.durationMinutes })
         } finally {
             migrated.close()
         }

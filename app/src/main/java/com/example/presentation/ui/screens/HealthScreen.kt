@@ -53,6 +53,7 @@ import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.ReminderStatus
 import com.example.domain.health.HealthFormat
 import com.example.domain.health.HealthGoals
+import com.example.domain.health.WorkoutType
 import com.example.domain.model.ConsistencyStreakCalculator
 import com.example.presentation.mvi.DeskIntent
 import com.example.presentation.mvi.DeskUiState
@@ -87,6 +88,11 @@ fun HealthScreen(
     onChangeWater: (Int) -> Unit,
     onSetSleepMinutes: (Int) -> Unit,
     onSetMood: (Int) -> Unit,
+    onStartWorkout: (WorkoutType) -> Unit,
+    onFinishWorkout: () -> Unit,
+    onCancelWorkout: () -> Unit,
+    onLogWorkout: (WorkoutType, Int) -> Unit,
+    onDeleteWorkout: (Long) -> Unit,
     onIntent: (DeskIntent) -> Unit
 ) {
     val context = LocalContext.current
@@ -108,7 +114,7 @@ fun HealthScreen(
         item {
             ScreenHeader(
                 title = "Health",
-                subtitle = "Steps, water, sleep, mood and medicines for today"
+                subtitle = "Steps, workouts, water, sleep, mood and medicines"
             )
         }
 
@@ -154,6 +160,19 @@ fun HealthScreen(
                     color = Marigold
                 )
             }
+        }
+
+        // Fitness tracker
+        item {
+            FitnessSection(
+                state = healthState,
+                dayLabels = healthState.lastSevenDays.map { dayLabel(it.dayEpoch, todayEpoch) },
+                onStartWorkout = onStartWorkout,
+                onFinishWorkout = onFinishWorkout,
+                onCancelWorkout = onCancelWorkout,
+                onLogWorkout = onLogWorkout,
+                onDeleteWorkout = onDeleteWorkout
+            )
         }
 
         // Water
@@ -359,7 +378,7 @@ private fun dayLabel(dayEpoch: Long, todayEpoch: Long): String {
 
 /** Seven simple bars with a line marking the daily goal. */
 @Composable
-private fun WeeklyBars(values: List<Int>, labels: List<String>, goal: Int, color: Color) {
+internal fun WeeklyBars(values: List<Int>, labels: List<String>, goal: Int, color: Color) {
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val goalColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
     val maxValue = maxOf(goal, values.maxOrNull() ?: 0).coerceAtLeast(1)

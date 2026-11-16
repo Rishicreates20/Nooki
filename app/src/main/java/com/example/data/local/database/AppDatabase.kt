@@ -12,6 +12,7 @@ import com.example.auth.SessionStore
 import com.example.data.local.dao.HealthDao
 import com.example.data.local.dao.ReminderDao
 import com.example.data.local.entity.HealthDayLogEntity
+import com.example.data.local.entity.WorkoutEntity
 import com.example.data.local.entity.PetJournalEntryEntity
 import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.UserProfileEntity
@@ -25,7 +26,8 @@ import com.example.data.local.entity.UserProfileEntity
         ReminderEntity::class,
         UserProfileEntity::class,
         PetJournalEntryEntity::class,
-        HealthDayLogEntity::class
+        HealthDayLogEntity::class,
+        WorkoutEntity::class
     ],
     version = 5,
     exportSchema = false
@@ -124,7 +126,8 @@ abstract class AppDatabase : RoomDatabase() {
 
         /**
          * Non-destructive migration path from v4 -> v5 adding `health_day_logs` for the Health
-         * section (steps, water, sleep, mood). Existing tables are untouched.
+         * section (steps, water, sleep, mood) and `workouts` for fitness tracking.
+         * Existing tables are untouched.
          */
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -142,6 +145,20 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `workouts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `day_epoch` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `duration_minutes` INTEGER NOT NULL,
+                        `calories` INTEGER NOT NULL,
+                        `started_at_millis` INTEGER NOT NULL,
+                        `created_at_millis` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_workouts_day_epoch` ON `workouts` (`day_epoch`)")
             }
         }
 

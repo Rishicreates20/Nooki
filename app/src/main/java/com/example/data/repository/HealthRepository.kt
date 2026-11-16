@@ -2,8 +2,12 @@ package com.example.data.repository
 
 import com.example.data.local.dao.HealthDao
 import com.example.data.local.entity.HealthDayLogEntity
+import com.example.data.local.entity.WorkoutEntity
 import com.example.domain.health.HealthGoals
 import com.example.domain.health.StepTally
+import com.example.domain.health.FitnessGoals
+import com.example.domain.health.WorkoutMath
+import com.example.domain.health.WorkoutType
 import com.example.domain.model.ConsistencyStreakCalculator
 import kotlinx.coroutines.flow.Flow
 
@@ -60,4 +64,23 @@ class HealthRepository(private val healthDao: HealthDao) {
         val log = today()
         save(log.copy(moodScore = score.coerceIn(0, 5)))
     }
+
+    /** Workouts from the last [days] days (today included), newest first. */
+    fun observeRecentWorkouts(days: Int, nowMillis: Long = System.currentTimeMillis()): Flow<List<WorkoutEntity>> =
+        healthDao.observeWorkoutsFrom(todayEpoch(nowMillis) - (days - 1))
+
+    suspend fun logWorkout(type: WorkoutType, durationMinutes: Int, startedAtMillis: Long) {
+        val minutes = durationMinutes.coerceIn(1, FitnessGoals.MAX_WORKOUT_MINUTES)
+        healthDao.insertWorkout(
+            WorkoutEntity(
+                dayEpoch = todayEpoch(startedAtMillis),
+                type = type.name,
+                durationMinutes = minutes,
+                calories = WorkoutMath.estimateCalories(type, minutes),
+                startedAtMillis = startedAtMillis
+            )
+        )
+    }
+
+    suspend fun deleteWorkout(id: Long) = healthDao.deleteWorkout(id)
 }

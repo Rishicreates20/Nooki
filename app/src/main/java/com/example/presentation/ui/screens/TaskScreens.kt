@@ -346,7 +346,7 @@ fun HomeScreen(
                 StatTile(
                     label = "Walking",
                     value = HealthFormat.steps(healthState.today.steps),
-                    caption = "of ${HealthFormat.steps(HealthGoals.STEPS)} steps",
+                    caption = "steps · ${healthState.activeMinutesToday} active min",
                     icon = Icons.AutoMirrored.Filled.DirectionsWalk,
                     accent = Marigold,
                     progress = HealthFormat.progress(healthState.today.steps, HealthGoals.STEPS),
