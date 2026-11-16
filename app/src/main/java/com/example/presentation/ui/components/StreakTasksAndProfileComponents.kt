@@ -849,7 +849,7 @@ fun UserProfileCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${userProfile.companionTitle} • Lv.$level ($totalXp XP)",
+                            text = "${userProfile.companionTitle} • Level $level",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Marigold
                         )
@@ -892,14 +892,8 @@ fun UserProfileCard(
                 )
                 ProfileStatBox(
                     value = "$doneCount",
-                    label = "Done Tasks",
+                    label = "Done",
                     tint = LeafGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                ProfileStatBox(
-                    value = "$todoCount",
-                    label = "To-Do",
-                    tint = ThreadIndigoLight,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -917,7 +911,7 @@ fun UserProfileCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Sensory Feedback (Cozy SoundPool & VibrationEffect)",
+                        text = "Sounds & vibration",
                         style = MaterialTheme.typography.labelLarge,
                         color = Marigold
                     )
@@ -929,7 +923,7 @@ fun UserProfileCard(
                             selected = isSoundEnabled,
                             onClick = onToggleSound,
                             label = {
-                                Text(if (isSoundEnabled) "Wooden Chime & Purr: ON" else "Sound: Muted")
+                                Text(if (isSoundEnabled) "Sound on" else "Sound off")
                             },
                             leadingIcon = {
                                 Icon(
@@ -956,7 +950,7 @@ fun UserProfileCard(
                             selected = isHapticsEnabled,
                             onClick = onToggleHaptics,
                             label = {
-                                Text(if (isHapticsEnabled) "Haptics: ON" else "Haptics: Muted")
+                                Text(if (isHapticsEnabled) "Vibration on" else "Vibration off")
                             },
                             leadingIcon = {
                                 Icon(
@@ -976,28 +970,6 @@ fun UserProfileCard(
                         )
                     }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AssistChip(
-                            onClick = { onPreviewCue(SensoryCue.PET_HEAD_PAT) },
-                            label = { Text("Test Fox Purr", color = WashedCotton) },
-                            modifier = Modifier.testTag("preview_fox_purr_button")
-                        )
-                        AssistChip(
-                            onClick = { onPreviewCue(SensoryCue.PET_PLAY_BOOP) },
-                            label = { Text("Test Wooden Hop", color = WashedCotton) },
-                            modifier = Modifier.testTag("preview_wooden_hop_button")
-                        )
-                        AssistChip(
-                            onClick = { onPreviewCue(SensoryCue.TASK_COMPLETED) },
-                            label = { Text("Test Completion Chime", color = WashedCotton) },
-                            modifier = Modifier.testTag("preview_completion_chime_button")
-                        )
-                    }
                 }
             }
 

@@ -82,7 +82,7 @@ class DeskPetViewModel(
             NoticeInspectionResult.SafeSuggestion(
                 kind = NoticeSourceKind.UNREAD_MESSAGE,
                 sanitizedTitle = "Unread message from Aman",
-                sanitizedSubtitle = "Message content never stored • Tap to add a knot",
+                sanitizedSubtitle = "Message text is never saved • Tap to add a reminder",
                 timestampMillis = System.currentTimeMillis() - 2 * 3_600_000L
             ),
             NoticeInspectionResult.SafeSuggestion(
@@ -323,7 +323,7 @@ class DeskPetViewModel(
                         repository.recordJournalMilestone(
                             milestoneType = PetMilestoneType.FIRST_HIGH_STREAK,
                             title = "High-Streak Achievement: ${currentStreak}-Day Thread!",
-                            narrative = "You maintained a ${currentStreak}-day consistency streak! Nooki's 3D aura and orbital particles are glowing at full strength.",
+                            narrative = "You maintained a ${currentStreak}-day consistency streak! Nooki is glowing with pride.",
                             badgeEmoji = "🔥",
                             happinessSnapshot = state.moodState.happinessScore,
                             streakSnapshot = currentStreak
@@ -382,12 +382,12 @@ class DeskPetViewModel(
                     ephemeralState.update {
                         it.copy(
                             celebratingUntilMillis = System.currentTimeMillis() + 3_000L,
-                            celebrationSpeech = "${intent.theme.badgeEmoji} Switched to ${intent.theme.displayName}! Look at my matching 3D particles!"
+                            celebrationSpeech = "${intent.theme.badgeEmoji} Switched to ${intent.theme.displayName}!"
                         )
                     }
                     emitSensoryCue(SensoryCue.KNOT_TIED)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Applied '${intent.theme.displayName}' theme & particle colors")
+                        DeskSideEffect.ShowMessage("Theme changed to ${intent.theme.displayName}")
                     )
                 }
             }
@@ -430,7 +430,7 @@ class DeskPetViewModel(
                         it.copy(
                             weatherState = restored.copy(isManualOverride = false),
                             celebratingUntilMillis = now + 2_600L,
-                            celebrationSpeech = "${restored.condition.badgeEmoji} Returned to Auto GPS weather (${restored.condition.displayName} • ${restored.temperatureCelsius}°C)!"
+                            celebrationSpeech = "${restored.condition.badgeEmoji} Back to your local weather!"
                         )
                     }
                 } else {
@@ -459,7 +459,7 @@ class DeskPetViewModel(
                         emitSensoryCue(SensoryCue.KNOT_TIED)
                         _sideEffects.send(
                             DeskSideEffect.ShowMessage(
-                                "3D Environment set to ${overrideCondition.displayName} (+${overrideCondition.moodHappinessBonus}% Mood)"
+                                "Background set to ${overrideCondition.displayName}"
                             )
                         )
                     }
@@ -488,7 +488,7 @@ class DeskPetViewModel(
                     )
                     emitSensoryCue(SensoryCue.KNOT_TIED)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Saved milestone to Nooki's Journal!")
+                        DeskSideEffect.ShowMessage("Saved to Nooki's journal")
                     )
                 }
             }
@@ -596,11 +596,11 @@ class DeskPetViewModel(
                         it.copy(
                             selectedTaskFilter = TaskBoardFilter.TODO,
                             celebratingUntilMillis = now + 2_800L,
-                            celebrationSpeech = "Added '${entity.title}' to your To-Do tasks!"
+                            celebrationSpeech = "Added '${entity.title}'!"
                         )
                     }
                     emitSensoryCue(SensoryCue.KNOT_TIED)
-                    _sideEffects.send(DeskSideEffect.ShowMessage("Added To-Do task: ${entity.title}"))
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Added: ${entity.title}"))
                 }
             }
 
@@ -611,10 +611,10 @@ class DeskPetViewModel(
                         ephemeralState.update {
                             it.copy(
                                 celebratingUntilMillis = System.currentTimeMillis() + 2_400L,
-                                celebrationSpeech = "Moved '${reopened.title}' back to your To-Do tasks!"
+                                celebrationSpeech = "Moved '${reopened.title}' back to Pending!"
                             )
                         }
-                        _sideEffects.send(DeskSideEffect.ShowMessage("Moved '${reopened.title}' back to To-Do"))
+                        _sideEffects.send(DeskSideEffect.ShowMessage("Moved back to Pending"))
                     }
                 }
             }
@@ -650,7 +650,7 @@ class DeskPetViewModel(
                         existingItems = uiState.value.allReminders
                     )
                     if (parsed.kind == NookiCaptureKind.QUESTION) {
-                        val answer = parsed.instantAnswerFromMemory ?: "I couldn't find that in your saved knots yet."
+                        val answer = parsed.instantAnswerFromMemory ?: "I couldn't find that in what you've saved yet."
                         ephemeralState.update {
                             it.copy(
                                 celebratingUntilMillis = now + 4_000L,
@@ -666,12 +666,12 @@ class DeskPetViewModel(
                         it.copy(
                             breathInputText = "",
                             celebratingUntilMillis = now + 3_200L,
-                            celebrationSpeech = "Tied a knot for '${entity.title}' (${parsed.timeExplanation})!"
+                            celebrationSpeech = "Got it: '${entity.title}' (${parsed.timeExplanation})!"
                         )
                     }
                     emitSensoryCue(SensoryCue.KNOT_TIED)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Nooki tied a knot: ${entity.title}")
+                        DeskSideEffect.ShowMessage("Saved: ${entity.title}")
                     )
                 }
             }
@@ -688,7 +688,7 @@ class DeskPetViewModel(
                         state.copy(
                             noticeSuggestions = state.noticeSuggestions.filterNot { it == suggestion },
                             celebratingUntilMillis = System.currentTimeMillis() + 2_800L,
-                            celebrationSpeech = "Added '${suggestion.sanitizedTitle}' to your thread!"
+                            celebrationSpeech = "Added '${suggestion.sanitizedTitle}'!"
                         )
                     }
                     emitSensoryCue(SensoryCue.KNOT_TIED)
@@ -737,7 +737,7 @@ class DeskPetViewModel(
                             )
                         }
                         viewModelScope.launch {
-                            _sideEffects.send(DeskSideEffect.ShowMessage("Blocked OTP/sensitive notification before saving!"))
+                            _sideEffects.send(DeskSideEffect.ShowMessage("Private message ignored (OTP or bank info)"))
                         }
                     }
 
@@ -773,7 +773,7 @@ class DeskPetViewModel(
                         )
                     }
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Moved $count unfinished knot(s) to tomorrow 9:00 AM.")
+                        DeskSideEffect.ShowMessage("Moved $count unfinished item(s) to tomorrow 9:00 AM.")
                     )
                 }
             }
@@ -802,11 +802,11 @@ class DeskPetViewModel(
                         it.copy(
                             isComposerSheetOpen = false,
                             celebratingUntilMillis = now + 2_800L,
-                            celebrationSpeech = "Tied a knot for '${entity.title}'!",
+                            celebrationSpeech = "Added '${entity.title}'!",
                             lastEarnedXp = 0
                         )
                     }
-                    _sideEffects.send(DeskSideEffect.ShowMessage("Tied knot: '${entity.title}'"))
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Added: '${entity.title}'"))
                 }
             }
 
@@ -817,7 +817,7 @@ class DeskPetViewModel(
                     ephemeralState.update {
                         it.copy(
                             celebratingUntilMillis = now + 3_800L,
-                            celebrationSpeech = "Knot untied! '${intent.reminder.title}' is done! +${intent.reminder.petMoodImpact} XP & +8% Happiness!",
+                            celebrationSpeech = "Nice! '${intent.reminder.title}' is done!",
                             lastEarnedXp = intent.reminder.petMoodImpact,
                             activePlayGesture = PetGestureType.PLAY_BOOP
                         )
@@ -825,8 +825,8 @@ class DeskPetViewModel(
                     val currentState = uiState.value
                     repository.recordJournalMilestone(
                         milestoneType = PetMilestoneType.TASK_CHAMPION,
-                        title = "Knot Untied: ${intent.reminder.title}",
-                        narrative = "Completed '${intent.reminder.title}' (+${intent.reminder.petMoodImpact} XP). Nooki celebrated with a 3D hop!",
+                        title = "Done: ${intent.reminder.title}",
+                        narrative = "Completed '${intent.reminder.title}'. Nooki did a happy hop!",
                         badgeEmoji = "🪡",
                         happinessSnapshot = (currentState.moodState.happinessScore + 8).coerceAtMost(100),
                         streakSnapshot = maxOf(1, currentState.consistencyStreak.currentStreakDays),
@@ -834,7 +834,7 @@ class DeskPetViewModel(
                     )
                     emitSensoryCue(SensoryCue.TASK_COMPLETED)
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Knot untied! +${intent.reminder.petMoodImpact} XP")
+                        DeskSideEffect.ShowMessage("Done! Nice work.")
                     )
                 }
             }
@@ -868,12 +868,12 @@ class DeskPetViewModel(
                     ephemeralState.update {
                         it.copy(
                             celebratingUntilMillis = System.currentTimeMillis() + 2_500L,
-                            celebrationSpeech = "Watch my 3D bell ring in 5 seconds!",
+                            celebrationSpeech = "A test reminder will ring in 5 seconds!",
                             lastEarnedXp = 0
                         )
                     }
                     _sideEffects.send(
-                        DeskSideEffect.ShowMessage("Scheduled '${entity.title}' for +5 seconds!")
+                        DeskSideEffect.ShowMessage("Test reminder in 5 seconds")
                     )
                 }
             }
@@ -896,7 +896,7 @@ class DeskPetViewModel(
             DeskIntent.ClearCompleted -> {
                 viewModelScope.launch {
                     repository.clearCompletedReminders()
-                    _sideEffects.send(DeskSideEffect.ShowMessage("Cleared untied knots."))
+                    _sideEffects.send(DeskSideEffect.ShowMessage("Cleared the done list."))
                 }
             }
         }
@@ -907,14 +907,14 @@ class DeskPetViewModel(
         val speech = when (gesture) {
             PetGestureType.HEAD_PAT -> {
                 val lines = listOf(
-                    "Purr! That head pat gave me +${gesture.happinessBoost}% Happiness & +${gesture.xpReward} XP!",
-                    "Hehe! My ears perked right up! Double-tap me for a 3D play hop!",
-                    "Tap any knot on my thread to untie it when you're done!"
+                    "Purr! I love head pats!",
+                    "Hehe! Double-tap me to play!",
+                    "Tap the circle next to anything you've finished!"
                 )
                 lines[(ephemeralState.value.petInteractionCombo) % lines.size]
             }
             PetGestureType.PLAY_BOOP ->
-                "Wheee! 3D Play Spin! +${gesture.happinessBoost}% Happiness & +${gesture.xpReward} XP!"
+                "Wheee! Play time!"
             PetGestureType.BELLY_SCRITCH ->
                 "Cozy belly scritches! My tail can't stop wagging! +${gesture.happinessBoost}% Happiness!"
         }
@@ -945,7 +945,7 @@ class DeskPetViewModel(
                 val current = uiState.value
                 repository.recordJournalMilestone(
                     milestoneType = PetMilestoneType.BONDING_MOMENT,
-                    title = "3D Bonding Combo x$nextCombo (${gesture.displayLabel})",
+                    title = "Playtime with Nooki x$nextCombo",
                     narrative = "Shared a joyful ${gesture.displayLabel} session! Nooki's happiness climbed to ${current.moodState.happinessScore}%.",
                     badgeEmoji = "🦊",
                     happinessSnapshot = current.moodState.happinessScore,

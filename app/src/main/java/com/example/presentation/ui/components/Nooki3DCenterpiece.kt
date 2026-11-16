@@ -376,14 +376,6 @@ fun Nooki3DCenterpiece(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "${moodState.happinessTier.badgeEmoji} ${mood.displayTitle.uppercase()} • ${moodState.happinessScore}% HAPPY • ${weatherCondition.badgeEmoji} ${weatherCondition.displayName.uppercase()}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = auraColor,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
                     text = speechText,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
@@ -973,7 +965,7 @@ fun Nooki3DCenterpiece(
             FilterChip(
                 selected = isAutoRotateEnabled,
                 onClick = onToggleAutoRotate,
-                label = { Text(if (isAutoRotateEnabled) "3D Orbit" else "Drag 3D") },
+                label = { Text(if (isAutoRotateEnabled) "Spinning" else "Spin") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Autorenew,
@@ -992,7 +984,7 @@ fun Nooki3DCenterpiece(
                 onClick = {
                     triggerHeadPatAnimation(340f, 260f)
                 },
-                label = { Text("Pat (+3%)") },
+                label = { Text("Pat") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.TouchApp,
@@ -1008,7 +1000,7 @@ fun Nooki3DCenterpiece(
                 onClick = {
                     triggerPlayBoopAnimation(340f, 260f)
                 },
-                label = { Text("Play Spin (+5%)") },
+                label = { Text("Play") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Celebration,

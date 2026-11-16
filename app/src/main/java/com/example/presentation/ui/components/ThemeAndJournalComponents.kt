@@ -112,65 +112,15 @@ fun ThemeSelectorCard(
                     )
                     Column {
                         Text(
-                            text = "Sanctuary Theme & 3D Particles",
+                            text = "Colour theme",
                             style = MaterialTheme.typography.titleLarge,
                             color = scheme.onSurface
                         )
                         Text(
-                            text = "Active: ${selectedTheme.badgeEmoji} ${selectedTheme.displayName} • Auto-updates 3D particle colors",
+                            text = "Now using ${selectedTheme.badgeEmoji} ${selectedTheme.displayName}",
                             style = MaterialTheme.typography.bodySmall,
                             color = scheme.onSurface.copy(alpha = 0.78f)
                         )
-                    }
-                }
-            }
-
-            // Live 3D Particle Palette Preview Bar for the currently selected theme
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = scheme.background,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, scheme.primary.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                    .testTag("active_theme_particle_preview")
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "3D Particle Colors",
-                            tint = scheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Synced 3D Particle Palette:",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = scheme.onBackground
-                        )
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        selectedTheme.particleColorsHex.forEachIndexed { idx, hex ->
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(hex))
-                                    .border(1.dp, Color.White.copy(alpha = 0.65f), CircleShape)
-                                    .testTag("particle_swatch_${selectedTheme.id}_$idx")
-                            )
-                        }
                     }
                 }
             }
@@ -348,12 +298,12 @@ fun PetMilestoneJournalSection(
                     )
                     Column {
                         Text(
-                            text = "Nooki's Milestone Journal",
+                            text = "Nooki's journal",
                             style = MaterialTheme.typography.titleLarge,
                             color = scheme.onSurface
                         )
                         Text(
-                            text = "${entries.size} recorded milestones • High streaks, personality shifts & memories",
+                            text = "${entries.size} moments saved",
                             style = MaterialTheme.typography.bodySmall,
                             color = scheme.onSurface.copy(alpha = 0.78f)
                         )

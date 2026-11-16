@@ -29,7 +29,8 @@ open class AlarmReceiver : BroadcastReceiver() {
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val database = AppDatabase.getInstance(appContext)
+                val database = AppDatabase.getActiveOrNull(appContext)
+                    ?: return@launch // nobody signed in: their alarms were cancelled at logout
                 val scheduler = AndroidAlarmScheduler(appContext)
                 val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
 

@@ -29,7 +29,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val database = NookiDatabase.getInstance(appContext)
+                val database = NookiDatabase.getActiveOrNull(appContext)
+                    ?: return@launch // nobody signed in: their alarms were cancelled at logout
                 val scheduler = AndroidExactAlarmScheduler(appContext)
                 val repository = ReminderRepositoryImpl(database.reminderDao(), scheduler)
 
